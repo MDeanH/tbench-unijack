@@ -4,7 +4,7 @@
 // info card geometry, keyboard focus on every tab stop, label occlusion, hidden-part fly-to, reduced motion, context loss and the no-WebGL fallback.
 //
 //   node tools/viewer-shots.mjs [--dir=qa-out/viewer] [--page=index.html]
-//        [--widths=320,360,390,768,1024,1440] [--sizes=667x375,844x390]    layout checks at these viewports (defaults shown)
+//        [--widths=320,360,390,768,1024,1440] [--sizes=667x375,844x390,1366x657]    layout checks at these viewports (defaults shown)
 //        [--flow=0]   skip the long desktop/mobile interaction flow         [--extra=0]   skip keyboard / reduced-motion / context-loss / no-WebGL sessions
 // Prints a JSON report and a final "FAILED CHECKS" list (exit code 1 if any check failed).
 import { chromium } from 'playwright-core';
@@ -19,7 +19,7 @@ const OUT = path.resolve(ROOT, args.dir || 'qa-out/viewer');
 const PAGE = args.page || 'index.html';   // e.g. --page=dist/_csp-test.html to test the single-file bundle under a strict CSP
 const HEIGHT_FOR = { 320: 568, 360: 740, 390: 844, 412: 915, 768: 1024, 1024: 768, 1280: 800, 1440: 900 };
 const widths = String(args.widths || '320,360,390,768,1024,1440').split(',').filter(Boolean).map(Number);
-const sizes = [...widths.map((w) => [w, HEIGHT_FOR[w] || 800]), ...String(args.sizes ?? '667x375,844x390').split(',').filter(Boolean).map((s) => s.split('x').map(Number))];
+const sizes = [...widths.map((w) => [w, HEIGHT_FOR[w] || 800]), ...String(args.sizes ?? '667x375,844x390,1366x657').split(',').filter(Boolean).map((s) => s.split('x').map(Number))];
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.css': 'text/css', '.glb': 'model/gltf-binary' };
 const server = http.createServer((req, res) => {
   if (req.url.startsWith('/favicon')) { res.writeHead(204); return res.end(); }
@@ -34,6 +34,7 @@ const GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-
 const browser = await chromium.launch({ executablePath: exe, args: GL });
 fs.mkdirSync(OUT, { recursive: true });
 const report = [], failures = [];
+const settled = async (page, extra = 150) => { await page.waitForFunction(() => !window.__unijack.busy(), null, { timeout: 60000 }); await page.waitForTimeout(extra); };   // camera tween, explode and insertion animations finished
 const openPanel = async (page) => { if (await page.locator('#parts-panel').isHidden()) { await page.click('#btn-parts'); await page.waitForTimeout(300); } };   // the UI closes the panel after a selection on short stages
 const check = (where, name, ok, detail) => { if (!ok) failures.push(`${where}: ${name}${detail !== undefined ? ' -> ' + JSON.stringify(detail) : ''}`); return ok; };
 
@@ -122,11 +123,11 @@ for (const [w, h] of sizes) {
     check(name, 'header controls do not overlap', L.headerOverlap.length === 0, L.headerOverlap); check(name, 'no scrollable (hidden) rows', L.scrollableRows.length === 0, L.scrollableRows);
     const short = h <= 520; check(name, short ? 'canvas keeps >= 45% of the height (short viewport)' : 'canvas keeps >= 38% of the height', L.canvasFraction >= (short ? 0.45 : 0.38), L.canvasFraction);
     check(name, 'short line visible', L.footnote.shortVisible); check(name, 'About summary visible', L.footnote.summaryVisible);
-    if (w <= 640 || short) check(name, 'disclosure collapsed on phones / short viewports', L.footnote.aboutOpen === false, L.footnote);
+    if (w <= 640 || h <= 860) check(name, 'disclosure collapsed on phones and windows under 860 px high', L.footnote.aboutOpen === false, L.footnote);
     // preset framing: the whole kit must be inside the canvas for each preset (projected board boxes)
     res.framing = {};
     for (const v of ['hero', 'top', 'low', 'side', 'under']) {
-      await page.click(`[data-view="${v}"]`); await page.waitForTimeout(1300);
+      await page.click(`[data-view="${v}"]`); await settled(page);
       res.framing[v] = await page.evaluate(() => { const U = window.__unijack, T = U.THREE, kit = U.kit; kit.root.updateMatrixWorld(true); let x0 = 9, x1 = -9, y0 = 9, y1 = -9; const p = new T.Vector3();
         for (const b of [kit.base, kit.mercury, kit.peri]) { const bx = new T.Box3().setFromObject(b); for (let i = 0; i < 8; i++) { p.set(i & 1 ? bx.max.x : bx.min.x, i & 2 ? bx.max.y : bx.min.y, i & 4 ? bx.max.z : bx.min.z).project(U.camera); x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); } }
         return [x0, x1, y0, y1].map((n) => +n.toFixed(2)); });
@@ -250,24 +251,24 @@ if (args.extra !== '0' && args.extra !== 0) {
       for (let i = 0; i < 40; i++) {
         await page.keyboard.press('Tab'); await page.waitForTimeout(60);
         const s = await probe(); if (!s) break; const id = s.tag + ':' + s.name; if (id === first) break; first ??= id; stops.push(s);
-        if (['Labels', 'canvas', 'Hero', 'ins', 'About this model'].some((n) => s.name.startsWith(n)) || i === 0) {
+        if (['btn-labels', 'c', 'hero', 'ins', 'About this model'].some((n) => s.name.startsWith(n)) || i === 0) {
           const pad = s.tag === 'canvas' ? null : { x: Math.max(0, s.rect[0] - 14), y: Math.max(0, s.rect[1] - 14), width: Math.min(w, s.rect[2] - s.rect[0] + 28), height: s.rect[3] - s.rect[1] + 28 };
           await shot(`focus-${String(i).padStart(2, '0')}-${s.name.replace(/\W+/g, '_')}`, pad ? { clip: pad } : {});
         }
       }
       res.stops = stops.map((s) => `${s.tag}:${s.name} ${s.ring && s.focusVisible ? 'ring' : 'NO-RING'}${s.clippedBy ? ' ' + s.clippedBy.toUpperCase() : ''}`);
-      check(label, 'keyboard walk reaches the canvas, the dock and the disclosure', ['canvas', 'Hero', 'ins', 'btn-play', 'About this model'].every((n) => stops.some((s) => s.name === n)), res.stops);
+      check(label, 'keyboard walk reaches the canvas, the dock and the disclosure', ['c', 'hero', 'ins', 'btn-play', 'About this model'].every((n) => stops.some((s) => s.name === n)), res.stops);
       for (const s of stops) check(label, `focus ring visible on ${s.tag}:${s.name}`, s.focusVisible && s.ring, s.outline);
       for (const s of stops) check(label, `focus ring not clipped on ${s.tag}:${s.name}`, !s.clippedBy, s.clippedBy);
       // Escape flow: Parts button -> Enter moves focus into the panel; Escape closes it and returns focus; card first, then panel
       await page.focus('#btn-parts'); await page.keyboard.press('Enter'); await page.waitForTimeout(300);
       const f1 = await page.evaluate(() => document.activeElement?.id); await page.locator('#part-list button').nth(2).focus(); await page.keyboard.press('Enter'); await page.waitForTimeout(900);
-      const card1 = await page.evaluate(() => !document.getElementById('card').hidden);
+      const card1 = await page.evaluate(() => !document.getElementById('card').hidden), panelAfterPick = await page.evaluate(() => !document.getElementById('parts-panel').hidden);   // short stages close the panel on a selection, so then only the card is left to close
       await page.keyboard.press('Escape'); await page.waitForTimeout(150); const afterEsc1 = await page.evaluate(() => ({ card: !document.getElementById('card').hidden, panel: !document.getElementById('parts-panel').hidden }));
       await page.keyboard.press('Escape'); await page.waitForTimeout(150); const afterEsc2 = await page.evaluate(() => ({ card: !document.getElementById('card').hidden, panel: !document.getElementById('parts-panel').hidden, focus: document.activeElement?.id }));
-      res.escape = { focusOnOpen: f1, cardOpened: card1, afterEsc1, afterEsc2 };
+      res.escape = { focusOnOpen: f1, cardOpened: card1, panelAfterPick, afterEsc1, afterEsc2 };
       check(label, 'Enter on Parts moves focus into the panel', f1 === 'part-filter', f1);
-      check(label, 'Escape closes the card first, then the panel, and focus returns to Parts', card1 && !afterEsc1.card && afterEsc1.panel && !afterEsc2.panel && afterEsc2.focus === 'btn-parts', res.escape);
+      check(label, 'Escape closes the card first, then the panel (when the layout keeps it open), and focus ends on Parts', card1 && !afterEsc1.card && afterEsc1.panel === panelAfterPick && !afterEsc2.panel && afterEsc2.focus === 'btn-parts', res.escape);
       // Tab from the Parts button reaches the Hero chip without walking the 87-row list
       await page.focus('#btn-parts'); await page.keyboard.press('Enter'); await page.waitForTimeout(200); await page.focus('#btn-parts'); let n = 0; for (; n < 12; n++) { await page.keyboard.press('Tab'); if (await page.evaluate(() => document.activeElement?.dataset?.view === 'hero')) break; }
       res.tabsFromPartsToHero = n + 1; check(label, 'Hero is within a few Tab presses of the Parts button with the panel open', n < 6, n + 1);

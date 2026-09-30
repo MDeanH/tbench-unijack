@@ -11,8 +11,8 @@ const appEl = $('#app'), canvas = $('#c'), stageEl = $('#stage');
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 const DEG = Math.PI / 180;
 
-// the full disclosure is open on roomy screens and collapsed (short line still visible) on phones and short viewports
-$('#about').open = !matchMedia('(max-width: 640px), (max-height: 520px)').matches;
+// the full disclosure is open only on roomy screens; on phones and windows under 860 px high it starts collapsed (the short line and the summary stay visible) so the model keeps the space
+$('#about').open = !matchMedia('(max-width: 640px), (max-height: 860px)').matches;
 
 function fail(kind, err) {
   $('#loader').hidden = true; appEl.classList.add('no-gl');
@@ -90,27 +90,27 @@ async function start(renderer) {
     return pts;
   }
   const ptsAtExplode = (e) => (Math.abs(kit.state.explode - e) < 1e-6 ? boardPoints() : withPose({ explode: e }, boardPoints));
-  const fitCam = new THREE.PerspectiveCamera(32, 1, 0.5, 8000), fv = new THREE.Vector3(), fr = new THREE.Vector3(), fu = new THREE.Vector3();
-  // smallest distance along dir (unit, from target towards the camera) at which all points project inside +-fill of the canvas; the target is re-centred on the projection
+  // Exact fit for a fixed view direction: with the camera orientation fixed, every point allows an interval of camera offsets (along the camera's
+  // right and up axes) that widens linearly with the distance, so the smallest distance at which all points project inside +-fill of the canvas is
+  // found by bisecting on "the intervals still intersect"; the offset is then the middle of the intersection. (An iterative re-centring on the
+  // projected midpoint overshoots when the near end of a long board is close to the camera, as in the side view on a wide, short stage.)
+  const fv = new THREE.Vector3(), fUp = new THREE.Vector3(0, 1, 0), fRight = new THREE.Vector3(), fCamUp = new THREE.Vector3();
   function frameFor(pts, dir, fill = 0.9) {
-    const tgt = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3());
-    fitCam.fov = camera.fov; fitCam.aspect = camera.aspect; fitCam.updateProjectionMatrix();
-    const place = (d) => { fitCam.position.copy(tgt).addScaledVector(dir, d); fitCam.up.set(0, 1, 0); fitCam.lookAt(tgt); fitCam.updateMatrixWorld(true); };
-    const extent = () => {
-      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-      for (const p of pts) { fv.copy(p).applyMatrix4(fitCam.matrixWorldInverse); if (fv.z > -1) return null; fv.applyMatrix4(fitCam.projectionMatrix); x0 = Math.min(x0, fv.x); x1 = Math.max(x1, fv.x); y0 = Math.min(y0, fv.y); y1 = Math.max(y1, fv.y); }
-      return { x0, x1, y0, y1 };
+    const c = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3());
+    const back = dir.clone().normalize();                      // from the target towards the camera; the camera looks along -back
+    fRight.crossVectors(fUp, back); if (fRight.lengthSq() < 1e-8) fRight.set(1, 0, 0); fRight.normalize(); fCamUp.crossVectors(back, fRight);
+    const tanV = Math.tan(camera.fov * DEG / 2), kx = fill * tanV * camera.aspect, ky = fill * tanV;
+    const X = [], Y = [], Z = []; let zMax = -1e9;
+    for (const p of pts) { fv.copy(p).sub(c); X.push(fv.dot(fRight)); Y.push(fv.dot(fCamUp)); const z = fv.dot(back); Z.push(z); zMax = Math.max(zMax, z); }
+    const span = (d) => {                                      // intersection of the allowed offsets for a camera at distance d from the centroid plane
+      let x0 = -1e9, x1 = 1e9, y0 = -1e9, y1 = 1e9;
+      for (let i = 0; i < X.length; i++) { const w = d - Z[i]; x0 = Math.max(x0, X[i] - kx * w); x1 = Math.min(x1, X[i] + kx * w); y0 = Math.max(y0, Y[i] - ky * w); y1 = Math.min(y1, Y[i] + ky * w); }
+      return { x0, x1, y0, y1, ok: x0 <= x1 && y0 <= y1 };
     };
-    let d = 200;
-    for (let round = 0; round < 4; round++) {
-      let lo = 20, hi = 6000;
-      for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; place(mid); const e = extent(); if (e && Math.max(e.x1 - e.x0, e.y1 - e.y0) / 2 <= fill) hi = mid; else lo = mid; }
-      d = hi; place(d); const e = extent(); if (!e) break;
-      const th = Math.tan(camera.fov * DEG / 2) * d;
-      fr.setFromMatrixColumn(fitCam.matrixWorld, 0); fu.setFromMatrixColumn(fitCam.matrixWorld, 1);
-      tgt.addScaledVector(fr, ((e.x0 + e.x1) / 2) * th * camera.aspect).addScaledVector(fu, ((e.y0 + e.y1) / 2) * th);
-    }
-    return { tgt, pos: tgt.clone().addScaledVector(dir, d), dist: d };
+    let lo = zMax + 1, hi = Math.max(6000, zMax + 6000);       // depth of the nearest point is at least 1 mm
+    for (let i = 0; i < 50; i++) { const mid = (lo + hi) / 2; if (span(mid).ok) hi = mid; else lo = mid; }
+    const d = hi, e = span(d), tgt = c.clone().addScaledVector(fRight, (e.x0 + e.x1) / 2).addScaledVector(fCamUp, (e.y0 + e.y1) / 2);
+    return { tgt, pos: tgt.clone().addScaledVector(back, d), dist: d };
   }
   function flyTo(pos, tgt, ms = 900) {
     if (reduce.matches) { tween = null; camera.position.copy(pos); controls.target.copy(tgt); controls.update(); needs = true; return; }
@@ -526,7 +526,7 @@ async function start(renderer) {
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); $('#gl-notice').hidden = false; });
   canvas.addEventListener('webglcontextrestored', () => {
     const pm = new THREE.PMREMGenerator(renderer), env = pm.fromScene(new RoomEnvironment(), 0.03);   // same call as lib/stage.js
-    scene.environment = env.texture; stage.env?.dispose(); stage.env = env; pm.dispose();
+    scene.environment = env.texture; stage.env = env; pm.dispose();   // the old target is not disposed: its GL objects died with the context, and deleting them logs INVALID_OPERATION warnings
     $('#gl-notice').hidden = true; needs = true;
   });
 
@@ -542,5 +542,5 @@ async function start(renderer) {
     if (firstFrame) { firstFrame = false; const l = $('#loader'); l.classList.add('done'); setTimeout(() => { l.hidden = true; }, 500); window.__viewerReady = true; }
   }
   requestAnimationFrame(loop);
-  window.__unijack = { kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE };
+  window.__unijack = { kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE, frameFor, boardPoints, dirFromAzEl, VIEWS, busy: () => !!(tween || expAnim || play) };
 }
