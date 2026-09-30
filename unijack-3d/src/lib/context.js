@@ -6,10 +6,13 @@ import * as prim from './primitives.js';
 export const BOARD_T = 1.6;   // mm, ASSUMED (standard PCB thickness; not measured)
 
 /** Everything a part builder needs. Builders are pure functions of this context. */
-export async function makeContext(baseUrl = new URL('../../', import.meta.url)) {
-  const scale = await (await fetch(new URL('data/scale.json', baseUrl))).json();
+export async function makeContext(baseUrl) {
+  // single-file bundles embed the assets (data: URIs) in window.__UNIJACK_ASSETS; otherwise fetch them next to the page
+  const EMB = globalThis.__UNIJACK_ASSETS;
+  if (!EMB) baseUrl ??= new URL('../../', import.meta.url);
+  const scale = EMB ? EMB['data/scale.json'] : await (await fetch(new URL('data/scale.json', baseUrl))).json();
   const loader = new THREE.TextureLoader();
-  const load = (n) => new Promise((res, rej) => loader.load(new URL('assets/tex/' + n, baseUrl).href, (t) => {
+  const load = (n) => new Promise((res, rej) => loader.load(EMB ? EMB['assets/tex/' + n] : new URL('assets/tex/' + n, baseUrl).href, (t) => {
     t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.generateMipmaps = true; res(t);
   }, undefined, rej));
   const [base, peri, mercuryFront, mercuryBack] = await Promise.all([

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, v] = a.replace(/^--/, '').split('='); return [k, v ?? true]; }));
 const OUT = path.resolve(ROOT, args.dir || 'qa-out/viewer');
+const PAGE = args.page || 'index.html';   // e.g. --page=dist/_csp-test.html to test the single-file bundle under a strict CSP
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.css': 'text/css', '.glb': 'model/gltf-binary' };
 const server = http.createServer((req, res) => {
   if (req.url.startsWith('/favicon')) { res.writeHead(204); return res.end(); }
@@ -28,7 +29,7 @@ async function session(name, ctxOpts, script) {
   const ctx = await browser.newContext(ctxOpts); const page = await ctx.newPage(); const errs = [];
   page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text().slice(0, 240)); });
   page.on('pageerror', (e) => errs.push('pageerror: ' + String(e).slice(0, 240)));
-  await page.goto(base + 'index.html'); await page.waitForFunction(() => window.__viewerReady, null, { timeout: 180000 });
+  await page.goto(base + PAGE); await page.waitForFunction(() => window.__viewerReady, null, { timeout: 180000 });
   const shot = async (n) => page.screenshot({ path: path.join(OUT, `${name}-${n}.png`) });
   await script(page, shot);
   const overflow = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);

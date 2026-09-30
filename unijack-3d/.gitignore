@@ -3,3 +3,4 @@ node_modules/
 qa-out/
 .DS_Store
 source-photos/
+dist/

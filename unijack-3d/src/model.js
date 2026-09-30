@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { makeContext } from './lib/context.js';
+import * as baseMod from './parts/base.js';
+import * as periMod from './parts/peri.js';
+import * as mercuryMod from './parts/mercury.js';
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const ease = (t) => t * t * (3 - 2 * t);
@@ -17,8 +20,7 @@ const EXPLODE_MERCURY_Y = 46, EXPLODE_PERI_Y = 30, EXPLODE_PERI_X = 0;
  */
 export async function createUniJack({ baseUrl } = {}) {
   const ctx = await makeContext(baseUrl);
-  const mods = await Promise.all(['base', 'peri', 'mercury'].map((n) => import(`./parts/${n}.js`)));
-  const [base, peri, mercury] = await Promise.all(mods.map(async (m) => m.build(ctx)));   // builders may be async
+  const [base, peri, mercury] = await Promise.all([baseMod, periMod, mercuryMod].map(async (m) => m.build(ctx)));   // builders may be async
 
   const root = new THREE.Group(); root.name = 'UniJack-kit';
   const merPivot = new THREE.Group(); merPivot.name = 'mercury-pivot';   // origin = module FINGERS edge, top surface

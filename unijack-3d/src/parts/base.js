@@ -8,10 +8,11 @@ export async function build(ctx) {
   g.userData.anchors = {};
   g.userData.latches = [];
   g.userData.buildErrors = [];
-  for (const [name, file] of [['base-left', './base-left.js'], ['base-right', './base-right.js']]) {
+  const HALVES = [['base-left', () => import('./base-left.js')], ['base-right', () => import('./base-right.js')]];
+  for (const [name, load] of HALVES) {
     const grp = new THREE.Group(); grp.name = name; g.add(grp);
     try {
-      const mod = await import(file);
+      const mod = await load();
       const r = (await mod.build(ctx, grp)) || {};
       Object.assign(g.userData.anchors, r.anchors || {});
       g.userData.latches.push(...(r.latches || []));
