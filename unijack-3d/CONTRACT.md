@@ -27,12 +27,17 @@ Texture pixel to mm: `frame.x(px)`, `frame.z(py)`, `frame.len(p)`, `frame.box([x
 
 | texture (assets/tex) | size px | px per mm | frame in ctx |
 |---|---|---|---|
-| base-top.webp | 1452 x 698 | 8.72 | `ctx.frames.base` (166.5 x 80.0 mm) |
-| peri-top.webp | 803 x 1548 | 20.0 | `ctx.frames.peri` (40.1 x 77.4 mm) |
+| base-top.webp | 1452 x 698 | 8.72 (model) | `ctx.frames.base` (texture frame; true board about 160 x 87 mm after rectification) |
+| peri-top.webp | 803 x 1548 | 20.0 (model) | `ctx.frames.peri` (texture frame; true board about 45 x 87 mm after rectification) |
 | mercury-front.webp / mercury-back.webp | 801 x 1568 | 22.5 | `ctx.frames.mercuryFront` / `mercuryBack` (35.5 x 69.6 mm; fingers edge on the LEFT of the front texture) |
 
-Scale anchors: Mercury length = 69.6 mm (SO-DIMM length, derived). Verified: contact pitch 0.498 mm vs the standard 0.5 mm; contact-strip span ratio between the flat-lay and macro photos 0.385 (four measures agree); round mounting pads measure round (0.98-1.05), so pixels are square. Do NOT use nominal package sizes (TSSOP body, Lattice BGA) to second-guess the scale: top-face outlines are smaller than package outlines and quick blob measures of the Lattice are unreliable.
-The textures carry a little white margin: the REAL board is the `board_px_box` inside the texture (data/scale.json); `prim.boardSlab({ box })` trims the slab to it without moving any pixel coordinate.
+Scale (measured; see README and data/scale.json). The flat-lay photo is a composite of separately scaled cut-outs, so each board has its own scale, taken
+from STANDARD-PITCH features on that board: base 8.82 px/mm along x and 7.94 along z (0.5 mm quad-flat IC pitch; its photo is stretched about 11 percent in x),
+PeriBoard 17.57 px/mm on both axes (0.635 mm connector pitch), Mercury 22.53 px/mm (0.498 mm contact pitch measured). Nominal package BODY sizes are not
+reliable anchors (top faces are smaller than package outlines); lead pitch is. You work in the uniform model px-space (`model_px_per_mm`: base 8.72, PeriBoard 20,
+Mercury 22.53); `src/model.js` rectifies each board group at assembly by model/true scale (this equals rectifying the photo), so never correct scale inside a part file.
+The textures carry a little white margin: the REAL board is the `board_px_box` inside the texture (data/scale.json); `prim.boardSlab({ box })` trims the slab to it
+without moving any pixel coordinate.
 
 ## How parts are made
 
@@ -62,9 +67,11 @@ Put `meta` on the GROUP, not on its sub-meshes. The viewer picks the nearest anc
 
 ## Budgets
 
-Triangles: base-left <= 150k, base-right <= 150k, PeriBoard <= 120k, Mercury <= 120k.
-Meshes (draw calls): base halves <= 150 each, PeriBoard <= 100, Mercury <= 100. Use instancing for repeats.
-No per-part textures beyond the shared board photos. No external downloads.
+Measured, not guessed. The whole assembled kit currently costs about 125k triangles, 289 meshes and **751 draw calls per frame including the shadow pass**
+(`node tools/qa-render.mjs --only=all` prints `calls=`). Keep the kit at or under about 800 draw calls and 150k triangles. Real cost is draw calls, not mesh count:
+a multi-material mesh costs one draw call per material group, so `prim.boxPart` / `cylPart` / `boardSlab` merge face groups to one group per distinct material,
+small parts (under 3 mm) do not cast shadows, and instanced leads/pins/pads are one call each. Use instancing or merged geometry for repeated parts; avoid per-part
+materials (share `ctx.mat.*`). No per-part textures beyond the shared board photos. No external downloads.
 
 ## Ownership
 

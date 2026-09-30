@@ -18,6 +18,38 @@ export function meta(obj, ud) {
   return obj;
 }
 
+
+/**
+ * Collapse a box/cylinder-like geometry's face groups to ONE group per distinct material, so a part costs 1-2 draw calls instead of 3-6
+ * (and a single material costs one). Geometry and appearance are unchanged. Returns the material (single) or an array (re-indexed groups).
+ */
+export function mergeMaterialGroups(geo, materials) {
+  const uniq = []; const map = materials.map((m) => { let i = uniq.indexOf(m); if (i < 0) { uniq.push(m); i = uniq.length - 1; } return i; });
+  if (uniq.length === materials.length) return materials;          // nothing to merge
+  if (uniq.length === 1) { geo.clearGroups(); return uniq[0]; }
+  if (!geo.index) {                                                     // non-indexed (RoundedBoxGeometry): reorder every vertex attribute by bucket
+    const ranges = uniq.map(() => []);
+    for (const g of geo.groups) ranges[map[g.materialIndex]].push([g.start, g.count]);
+    const total = ranges.reduce((t, r) => t + r.reduce((x, [, c]) => x + c, 0), 0);
+    for (const name of Object.keys(geo.attributes)) {
+      const a = geo.attributes[name], sz = a.itemSize, out = new a.array.constructor(total * sz); let w = 0;
+      for (const r of ranges) for (const [st, c] of r) { out.set(a.array.subarray(st * sz, (st + c) * sz), w * sz); w += c; }
+      geo.setAttribute(name, new THREE.BufferAttribute(out, sz, a.normalized));
+    }
+    geo.clearGroups(); let start = 0;
+    ranges.forEach((r, mi) => { const n = r.reduce((x, [, c]) => x + c, 0); geo.addGroup(start, n, mi); start += n; });
+    return uniq;
+  }
+  const idx = geo.index.array, buckets = uniq.map(() => []);
+  for (const g of geo.groups) { const b = buckets[map[g.materialIndex]]; for (let i = g.start; i < g.start + g.count; i++) b.push(idx[i]); }
+  const flat = [].concat(...buckets);
+  geo.setIndex(new THREE.BufferAttribute(new idx.constructor(flat), 1));
+  geo.clearGroups(); let start = 0; buckets.forEach((b, mi) => { geo.addGroup(start, b.length, mi); start += b.length; });
+  return uniq;
+}
+/** Small parts do not cast shadows (they cost a second draw call each and their shadows are invisible at viewing distance). */
+const SHADOW_MIN_MM = 3;
+
 /**
  * Extruded box component sitting on y = y0 (default: the board top, y = 0).
  * size = [w (x), h (height, y), d (z)] in mm; pos = [cx, y0, cz] (board-local).
@@ -27,13 +59,13 @@ export function meta(obj, ud) {
 export function boxPart(parent, { frame, size: [w, h, d], pos: [cx, y0 = 0, cz], rotY = 0, radius = 0, top, side, bottom, name, ud }) {
   const geo = radius > 0 ? new RoundedBoxGeometry(w, h, d, 3, Math.min(radius, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3)) : new THREE.BoxGeometry(w, h, d);
   geo.translate(0, h / 2, 0);
-  const m = new THREE.Mesh(geo, [side, side, top || side, bottom || side, side, side]);
+  const m = new THREE.Mesh(geo, mergeMaterialGroups(geo, [side, side, top || side, bottom || side, side, side]));
   m.position.set(cx, y0, cz); m.rotation.y = rotY;
   // parts hanging from the BACK of a board: pass a photo `bottom` material (back photo) and they get mirrored-x bottom UVs
   if (((top && top.map) || (bottom && bottom.map)) && frame) planarUV(geo, frame, [cx, y0, cz], rotY, { mirrorBottom: !!(bottom && bottom.map) });
   if (name) m.name = name;
   if (ud) Object.assign(m.userData, ud);
-  m.castShadow = m.receiveShadow = true;
+  m.castShadow = Math.max(w, h, d) >= SHADOW_MIN_MM; m.receiveShadow = true;
   parent.add(m);
   return m;
 }
@@ -42,12 +74,12 @@ export function boxPart(parent, { frame, size: [w, h, d], pos: [cx, y0 = 0, cz],
 export function cylPart(parent, { frame, r, h, pos: [cx, y0 = 0, cz], top, side, bottom, segments = 32, name, ud }) {
   const geo = new THREE.CylinderGeometry(r, r, h, segments);
   geo.translate(0, h / 2, 0);
-  const m = new THREE.Mesh(geo, [side, top || side, bottom || side]);
+  const m = new THREE.Mesh(geo, mergeMaterialGroups(geo, [side, top || side, bottom || side]));
   m.position.set(cx, y0, cz);
   if (((top && top.map) || (bottom && bottom.map)) && frame) planarUV(geo, frame, [cx, y0, cz], 0, { mirrorBottom: !!(bottom && bottom.map) });
   if (name) m.name = name;
   if (ud) Object.assign(m.userData, ud);
-  m.castShadow = m.receiveShadow = true;
+  m.castShadow = Math.max(2 * r, h) >= SHADOW_MIN_MM; m.receiveShadow = true;
   parent.add(m);
   return m;
 }
@@ -64,7 +96,7 @@ export function instanced(parent, geometry, material, items, name) {
     im.setMatrixAt(i, o.matrix);
   });
   im.instanceMatrix.needsUpdate = true;
-  im.castShadow = true; im.receiveShadow = true;
+  im.castShadow = false; im.receiveShadow = true;   // leads, pins and pads are too small to cast a visible shadow
   if (name) im.name = name;
   parent.add(im);
   return im;
@@ -104,7 +136,7 @@ export function boardSlab(parent, { frame, topTex, bottomTex = null, mats, thick
   const geo = new RoundedBoxGeometry(b.w, thickness, b.d, 3, radius);
   geo.translate(0, -thickness / 2, 0);
   planarUV(geo, frame, [b.cx, 0, b.cz], 0, { mirrorBottom: !!bottomTex });
-  const m = new THREE.Mesh(geo, [mats.fr4Edge, mats.fr4Edge, top, bottom, mats.fr4Edge, mats.fr4Edge]);
+  const m = new THREE.Mesh(geo, mergeMaterialGroups(geo, [mats.fr4Edge, mats.fr4Edge, top, bottom, mats.fr4Edge, mats.fr4Edge]));
   m.position.set(b.cx, 0, b.cz);
   m.name = name; m.receiveShadow = true; m.castShadow = true;
   m.userData = { kind: 'board', label: 'PCB', status: 'photo-derived', desc: 'Outline and size derived from photos; 1.6 mm thickness is assumed.' };

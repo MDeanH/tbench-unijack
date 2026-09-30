@@ -23,6 +23,8 @@ try {
   await page.waitForFunction(() => window.__ready || window.__error, null, { timeout: 240000 });
   const err = await page.evaluate(() => window.__error); if (err) throw new Error(err);
   const res = await page.evaluate(() => window.__collide);
+  const mate = await page.evaluate(() => window.__mate);
+  console.log('PeriBoard mating fit:', JSON.stringify(mate, null, 1));
   for (const r of res) {
     console.log(`\ninsertion ${r.ins.toFixed(2)}  (${r.n} sample points)  ${r.hits.length ? 'HITS: ' + r.hits.slice(0, 5).map((h) => `${h.pair} ${h.depth_mm}mm`).join(' | ') : 'no penetration'}`);
     if (r.ins === 1) console.log('   tightest clearances under the seated module:', r.minClearance.map((c) => `${c.part} ${c.mm}mm`).join(' | '));

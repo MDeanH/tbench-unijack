@@ -42,7 +42,7 @@ const css = rd('src/viewer.css').toString();
 
 const core = `<style>\n${css}</style>\n${body}<script>window.__UNIJACK_ASSETS=${JSON.stringify(assets)};</script>\n<script type="module">${js}</script>\n`;
 const fragment = `<title>${TITLE}</title>\n${core}`;
-const doc = (extraHead = '') => `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>${TITLE}</title>${extraHead}</head><body>\n${core}</body></html>\n`;
+const doc = (extraHead = '') => `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="description" content="Rotatable, explodable, photo-anchored 3D model of the UniJack kit. Illustrative, not CAD."><title>${TITLE}</title>${extraHead}</head><body>\n${core}</body></html>\n`;
 const CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob: data:; style-src 'unsafe-inline'; img-src blob: data:; font-src data:; media-src blob: data:; connect-src blob: data:; worker-src blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 fs.writeFileSync(path.join(DIST, 'unijack-3d.artifact.html'), fragment);

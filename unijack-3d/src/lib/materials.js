@@ -8,7 +8,7 @@ export function makeMaterials() {
   const std = (color, roughness, metalness = 0, extra = {}) =>
     new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra });
   return {
-    fr4Edge: std('#a39b6a', 0.72),                 // exposed FR4 at the board edge
+    fr4Edge: std('#cfd8d2', 0.72),                 // exposed FR4 at the board edge: pale grey-green, as in gallery-1 (was khaki)
     maskBottom: std('#0a4f6b', 0.5),               // PLAIN underside: undersides of base + PeriBoard are NOT photographed
     gold: std('#d9b15a', 0.3, 1),
     tin: std('#c9cdd1', 0.34, 1),

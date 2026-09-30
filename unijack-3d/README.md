@@ -25,20 +25,23 @@ It is ES modules with an import map, so it has to be served over http (double-cl
 
 ## How it is built (and what is and is not real)
 
-The board tops are the **real gallery photographs**, so silkscreen, copper and text are real and nothing is invented. On top of the
-photo, every identifiable part is extruded from its measured footprint with typical heights and real-shaped detail (leads, pins, latch
-clips, contacts). The photo is projected straight down onto every part's top face, so each part looks like its photographed self
-from above and has real depth from any other angle.
+The board tops are the **real gallery photographs**, so silkscreen, copper and text are real. On top of the photo, every identifiable
+part is extruded from its measured footprint with typical heights and real-shaped detail (leads, pins, latch clips, contacts). The photo
+is projected straight down onto every part's top face, so each part looks like its photographed self from above and has real depth
+from any other angle.
 
 | item | status |
 |---|---|
-| Board outlines and sizes: base about 161 x 80 mm, PeriBoard about 40 x 77 mm, Mercury about 35.5 x 69.6 mm | photo-derived. The scale is anchored on Mercury's 69.6 mm SO-DIMM length and cross-checked three ways: the gold contact pitch measures 0.498 mm against the standard 0.5 mm; the same module's contact strip spans the same proportion of pixels (ratio 0.385, four separate measures agree) in the flat-lay and macro photos; and the round mounting pads measure round (width/height 0.98 to 1.05), so the photos have square pixels. Mercury's 35.5 mm width is taller than the 30 mm JEDEC SO-DIMM; no Mercury drawing was checked. The 14 mm Lattice package is not used as an anchor (it measures roughly 15 x 13 mm by eye). |
-| Part footprints and positions | photo-derived (overlay-checked against the photos, see `tools/overlay.py`) |
-| Designators (J100, J400, ...) and chip markings | photo-verified: only text legible in a photo is used |
-| Part heights, plastic/metal colours | **assumed** (typical values) |
-| PeriBoard stack height above the base | **assumed** (not published) |
+| Board sizes: base about 160 x 87 mm, PeriBoard about 45 x 87 mm, Mercury about 35.5 x 69.6 mm | photo-derived, each within a few percent. **Each board is scaled from standard-pitch features on that board**, because the flat-lay photo is a composite of separately scaled cut-outs: the base from the lead pitch of a 0.5 mm quad-flat IC (its photo is stretched about 11 percent in x: 8.82 px/mm along x, 7.94 along z), the PeriBoard from the 0.635 mm pitch of its connectors (17.57 px/mm, square), Mercury from its 0.5 mm contact pitch (measures 0.498) and its 69.6 mm length (round mounting pads measure round). Independent check: after rectification the three mating connector pairs between the base and the PeriBoard agree in length to about 1.5 percent and in position to 0.4 mm, and the two boards come out the same depth. Mercury's 35.5 mm width is taller than the 30 mm JEDEC SO-DIMM; no Mercury drawing was checked. Tools: `tools/pitch-check.py`. |
+| Part footprints and positions | photo-derived (overlay-checked against the photos, see `tools/overlay.py`; most within about 0.5 mm) |
+| Designators (J100, J400, ...) and chip markings | photo-verified: the printed text is legible in a photo. The part's shape is photo-derived and its height assumed. |
+| Part heights, plastic and metal colours | **assumed**. Matched-camera comparisons with the 3/4 photo suggest some tall parts (RJ45, barrel jack, terminal) are lower than typical values; treat all heights as plus or minus 30 percent. |
+| Detail geometry: connector contacts, IC leads, latch hooks, solder balls, pin tips | synthetic, built to look right; counts come from the photos where legible |
+| PeriBoard stack height above the base | **assumed** (not published; the photos do not pin it down) |
 | PCB thickness (1.6 mm base and PeriBoard, about 1.2 mm Mercury) | **assumed** |
-| Insertion angle (28 degrees) and slide distance | **assumed** (take them from Jens's insertion video) |
+| Insertion angle (28 degrees), slide distance, latch travel, explode distances | **assumed** and illustrative (take them from Jens's insertion video) |
+| Texture patch under the socket latches | **synthetic**. The flat-lay photo has the closed latch arms baked in; while the latches are open a small patch cloned from a plain region of the board covers those pixels. It is hidden whenever the latches are closed. |
+| Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97). Hue and highlights are approximate. |
 | Undersides of the base board and PeriBoard | **not photographed**, shown plain. Mercury's back is photographed and shown. |
 | Function of any part | inferred from shape only ("appears to be ...") |
 
@@ -84,4 +87,5 @@ The viewer is marked `noindex` while it is a work in progress.
 * Tiny passives (0402 and smaller) are texture-only; larger parts have real geometry.
 * Real-time lighting cannot reproduce macro depth of field or the cinematic look of an offline render. This is a viewer, not the
   promotional film; the film should be rendered offline from real CAD or from this GLB.
+* Tall parts at the photo edge (RJ45, USB-A, barrel jack, terminal, mini- and micro-USB) show some of their own side faces in their top-face pixels (the flat lay is a perspective photo); their PCB-level footprints are displaced by a fraction of a millimetre.
 * Not yet tested on a real GPU, in Safari or on iOS.

@@ -52,6 +52,7 @@ import { createUniJack } from './model.js';
     }
     const states = [1, 0.95, 0.9, 0.85, 0.8, 0.7, 0.62, 0.5, 0.35, 0.2, 0];
     window.__collide = states.map(check);
+    window.__mate = kit.mate;
     kit.setInsertion(1);
     window.__ready = true;
   } catch (e) { console.error(e); window.__error = String((e && e.stack) || e); }

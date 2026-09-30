@@ -16,7 +16,8 @@ globalThis.__PHOTO_GAIN = q.has('gain') ? parseFloat(q.get('gain')) : undefined;
 globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
 (async () => {
   try {
-    const kit = await createUniJack();
+    const rectify = q.has('rectify') ? q.get('rectify') === '1' : !(mode === 'footprint' || view === 'top' || view === 'bottom');   // overlays compare against UNrectified textures
+    const kit = await createUniJack({ rectify });
     const fr = kit.ctx.frames;
     const frame = only === 'base' ? fr.base : only === 'peri' ? fr.peri : only === 'mercury' ? fr.mercuryFront : null;
     let W = num('w', 0), H = num('h', 0);

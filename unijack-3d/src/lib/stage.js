@@ -9,7 +9,7 @@ export function makeStage(renderer, { shadows = true } = {}) {
   renderer.toneMapping = THREE.NeutralToneMapping;   // Khronos PBR Neutral: keeps solder-mask hue and saturation (ACES lifts red in saturated teal)
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = shadows;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;   // PCFSoftShadowMap was removed in r18x and logged a warning on every load
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG);

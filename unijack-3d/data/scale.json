@@ -1,18 +1,18 @@
 {
   "units": "mm",
-  "note": "PHOTO-DERIVED illustrative dimensions; not CAD. Scale anchored on the 69.6 mm SO-DIMM length of Mercury (derived), cross-checked against the 14 mm Lattice iCE40HX8K package (datasheet).",
+  "note": "PHOTO-DERIVED illustrative dimensions, not CAD. The flat-lay photo is a composite of separately scaled cut-outs, so each board is scaled from standard-pitch features on that board (see tools/pitch-check.py): base from a 0.5 mm-pitch quad-flat IC (anisotropic: x and z differ by ~11 percent), PeriBoard from 0.635 mm connector pitch, Mercury from its 0.5 mm contact pitch and 69.6 mm length. Part builders worked in the uniform model_px_per_mm; model.js rectifies each board with model/axis.",
   "px_per_mm": {
     "flat_lay": 8.721,
     "macro": 22.529
   },
   "dims_mm": {
     "base": [
-      161.4,
-      79.6
+      159.5,
+      86.5
     ],
     "peri": [
-      39.7,
-      76.5
+      45.2,
+      86.5
     ],
     "mercury": [
       35.5,
@@ -37,16 +37,6 @@
     "base": 8.72,
     "peri": 20,
     "mercury": 22.53
-  },
-  "fpga_cross_check": {
-    "measured_mm": [
-      15.14,
-      13.3
-    ],
-    "datasheet_mm": [
-      14,
-      14
-    ]
   },
   "peri_ncc": 0.659,
   "source_boxes": {
@@ -106,16 +96,34 @@
   "board_px_box": {
     "base": [
       25,
-      1,
+      4,
       1432,
-      695
+      691
     ],
     "peri": [
       0,
-      17,
+      28,
       794,
       1548
     ]
   },
-  "note_dims": "Board sizes are the blue-mask extent inside the textures (photo-derived, not CAD). Mercury keeps its own traced outline (gold fingers make a blue-mask box meaningless there)."
+  "model_px_per_mm": {
+    "base": 8.72,
+    "peri": 20,
+    "mercury": 22.53
+  },
+  "axis_px_per_mm": {
+    "base": {
+      "x": 8.82,
+      "z": 7.94
+    },
+    "peri": {
+      "x": 17.57,
+      "z": 17.57
+    },
+    "mercury": {
+      "x": 22.53,
+      "z": 22.53
+    }
+  }
 }

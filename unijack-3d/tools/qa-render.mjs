@@ -45,7 +45,7 @@ async function shot(params, out) {
   await page.locator('canvas').screenshot({ path: out });
   const stats = await page.evaluate(() => window.__stats);
   await page.close();
-  console.log(`${out}  meshes=${stats.meshes} tris=${stats.triangles} ${stats.canvas.join('x')}${errs.length ? '  CONSOLE ERRORS: ' + errs.slice(0, 3).join(' | ') : ''}`);
+  console.log(`${out}  meshes=${stats.meshes} tris=${stats.triangles} calls=${stats.drawCalls} ${stats.canvas.join('x')}${errs.length ? '  CONSOLE ERRORS: ' + errs.slice(0, 3).join(' | ') : ''}`);
   return stats;
 }
 

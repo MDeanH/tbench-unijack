@@ -195,7 +195,7 @@ export async function build(ctx, group) {
   const FACE = 392, BACK = 371;                              // px: housing +x face (slot mouth) and slot back wall
   const YTOP = 22, YBOT = 647;
   const socketZ = -2.2;                                      // module centre z seated (hook pins' midpoint; assumed symmetric)
-  const socketX = X(FACE) - 0.2;                             // fingers edge: just at the slot mouth (gold fingers visible in gallery-2)
+  const socketX = X(FACE) - 2.3;                             // fingers edge: ~2 mm into the 2.4 mm-deep slot, so only ~0.3 mm of gold stays visible (gallery-2); review found 0.2 mm was half-inserted
 
   {
     const g = newGroup('J400-socket', { ref: 'J400', label: 'SO-DIMM-style module socket', kind: 'connector', status: 'photo-derived',
