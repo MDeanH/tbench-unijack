@@ -6,6 +6,8 @@
 // frames.base, so the top faces (planar-UV photo) line up with the photo. All HEIGHTS, plastic/metal colours and latch
 // kinematics are not visible in a top-down photo: they are typical values and flagged 'assumed' / described as such.
 
+import { uniqueNames } from './base-right-helpers.js';
+
 export async function build(ctx, group) {
   const { THREE, prim, mat, frames, tex } = ctx;
   const F = frames.base;
@@ -59,34 +61,94 @@ export async function build(ctx, group) {
   /** flat tinned pad / plate lying on the board */
   const plate = (parent, b, t = 0.12, material = M.tin, y0 = 0) => B(parent, b, t, { y0, top: photo, side: material });
   /**
-   * Board-level decal that re-uses a CLEAN region of the board photo: the flat-lay texture has the two CLOSED latch arms
-   * baked into it, so when a latch rotates open the baked arm would stay behind as a ghost. The decal (y = 0.04) hides
-   * that ghost by sampling a nearby plain-trace region (dst and src are texture-pixel boxes).
+   * Board-level decal that hides the CLOSED latch arms and hooks baked into the flat-lay texture: when a latch rotates open the
+   * baked arm would stay behind as a ghost. The decal is NOT the real board: what lies under a latch arm is not photographed, so it is
+   * filled with plain solder-mask pixels copied from a clean region of the same photo (chosen to match the tone around the arm), tone-matched
+   * with a per-channel gain, and feathered at the edges so it does not read as a rectangle. model.js shows it only while the latches are open.
+   *
+   *   pieces  [{ b: [x0,y0,x1,y1], f: [l,t,r,b] }]  texture-pixel boxes whose union is fully opaque; f = feather width (px) OUTSIDE each edge
+   *   map     (x, y) -> [sx, sy]  destination texture pixel -> source texture pixel
+   *   gain    [r,g,b] linear multiplier for the sampled pixels, or { box, c: [tl, tr, bl, br] } = one gain per corner of `box`,
+   *           blended bilinearly so the fill meets the real pixels around it without a tone step (gains come from toneGain below)
    */
-  const patchMat = photo.clone(); patchMat.polygonOffset = true; patchMat.polygonOffsetFactor = -2; patchMat.polygonOffsetUnits = -2;
-  const cleanPatch = (parent, dst, src) => {
-    const o = F.box(dst);
-    const geo = new THREE.PlaneGeometry(o.w, o.d); geo.rotateX(-Math.PI / 2);
-    const p = geo.attributes.position, uv = new Float32Array(p.count * 2);
-    for (let i = 0; i < p.count; i++) {
-      const fx = (p.getX(i) + o.w / 2) / o.w, fz = (p.getZ(i) + o.d / 2) / o.d;
-      uv[2 * i] = (src[0] + fx * (src[2] - src[0])) / F.wpx;
-      uv[2 * i + 1] = 1 - (src[1] + fz * (src[3] - src[1])) / F.hpx;
+  const pixels = (() => {                                   // RGBA of the base texture, read once (canvas); null if unavailable
+    try {
+      const img = tex.base.image, w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0);
+      return { w, h, d: cx.getImageData(0, 0, w, h).data };
+    } catch (e) { return null; }
+  })();
+  /** mean LINEAR-light colour of a texture-pixel box (null if the texture cannot be read) */
+  const meanLin = ([x0, y0, x1, y1]) => {
+    if (!pixels) return null;
+    const s = [0, 0, 0]; let n = 0;
+    for (let y = Math.max(0, Math.floor(y0)); y < Math.min(pixels.h, Math.ceil(y1)); y++) for (let x = Math.max(0, Math.floor(x0)); x < Math.min(pixels.w, Math.ceil(x1)); x++) {
+      const i = 4 * (y * pixels.w + x); for (let k = 0; k < 3; k++) s[k] += Math.pow(pixels.d[i + k] / 255, 2.2); n++;
     }
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    const m = new THREE.Mesh(geo, patchMat); m.position.set(o.cx, 0.04, o.cz); m.receiveShadow = true; parent.add(m); return m;
+    return n ? s.map((v) => v / n) : null;
+  };
+  /** per-channel gain that makes the source box look like the target box (clamped to a mild correction) */
+  const toneGain = (src, tgt) => {
+    const a = meanLin(src), b = meanLin(tgt);
+    return a && b ? a.map((v, k) => Math.min(1.3, Math.max(0.7, b[k] / Math.max(v, 1e-4)))) : [1, 1, 1];
+  };
+  const linMap = (dst, src) => (x, y) => {
+    const tx = Math.min(1, Math.max(0, (x - dst[0]) / (dst[2] - dst[0]))), ty = Math.min(1, Math.max(0, (y - dst[1]) / (dst[3] - dst[1])));
+    return [src[0] + tx * (src[2] - src[0]), src[1] + ty * (src[3] - src[1])];
+  };
+  const patchMat = photo.clone();
+  patchMat.vertexColors = true; patchMat.transparent = true; patchMat.depthWrite = false;
+  patchMat.polygonOffset = true; patchMat.polygonOffsetFactor = -2; patchMat.polygonOffsetUnits = -2;
+  const latchPatch = (parent, { name, pieces: pcs, map, gain = [1, 1, 1], y = 0.04, step = 2 }) => {
+    const pieces = pcs.map((p) => ({ b: p.b, f: p.f || [0, 0, 0, 0] }));
+    const sm = (t) => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+    const ramp = (d, w) => (w > 0 ? sm(1 + d / w) : d >= 0 ? 1 : 0);        // d = signed distance inside an edge
+    const alphaAt = (x, yy) => pieces.reduce((a, { b, f }) => Math.max(a, Math.min(
+      ramp(x - b[0], f[0]), ramp(yy - b[1], f[1]), ramp(b[2] - x, f[2]), ramp(b[3] - yy, f[3]))), 0);
+    const axis = (i0, i1) => {                                               // grid lines: regular + every piece edge (and just outside hard edges)
+      const set = new Set();
+      const lo = Math.min(...pieces.map((p) => p.b[i0] - p.f[i0 === 0 ? 0 : 1])), hi = Math.max(...pieces.map((p) => p.b[i1] + p.f[i1 === 2 ? 2 : 3]));
+      for (let v = lo; v <= hi + 1e-6; v += step) set.add(+v.toFixed(3));
+      for (const p of pieces) for (const [i, fi, sgn] of [[i0, p.f[i0 === 0 ? 0 : 1], -1], [i1, p.f[i1 === 2 ? 2 : 3], 1]]) {
+        set.add(+p.b[i].toFixed(3)); if (fi > 0) set.add(+(p.b[i] + sgn * fi).toFixed(3)); else set.add(+(p.b[i] + sgn * 0.01).toFixed(3));
+      }
+      return [...set].sort((u, v) => u - v);
+    };
+    const gainAt = Array.isArray(gain) ? () => gain : (x, yy) => {
+      const [x0, y0, x1, y1] = gain.box, tx = Math.min(1, Math.max(0, (x - x0) / (x1 - x0))), ty = Math.min(1, Math.max(0, (yy - y0) / (y1 - y0)));
+      const [tl, tr, bl, br] = gain.c;
+      return [0, 1, 2].map((k) => (1 - ty) * ((1 - tx) * tl[k] + tx * tr[k]) + ty * ((1 - tx) * bl[k] + tx * br[k]));
+    };
+    const xs = axis(0, 2), ys = axis(1, 3), nx = xs.length, ny = ys.length;
+    const P = [], N = [], U = [], C = [], A = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const [sx, sy] = map(xs[i], ys[j]), a = alphaAt(xs[i], ys[j]), gk = gainAt(xs[i], ys[j]);
+      P.push(X(xs[i]), 0, Z(ys[j])); N.push(0, 1, 0); U.push(sx / F.wpx, 1 - sy / F.hpx); C.push(gk[0], gk[1], gk[2], a); A.push(a);
+    }
+    const idx = [];
+    for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+      if (A[a] + A[b] + A[c] + A[d] <= 0) continue;
+      idx.push(a, c, b, b, c, d);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 4));
+    geo.setIndex(idx);
+    const m = new THREE.Mesh(geo, patchMat); m.name = name; m.position.y = y; m.receiveShadow = true; m.renderOrder = 1; parent.add(m); return m;
   };
 
   // =====================================================================================================
   // J100  DC barrel-style power jack (designator printed + legible). Opening faces the board edge (-x).
   // =====================================================================================================
   {
-    const g = newGroup('J100-group', { ref: 'J100', label: 'Power jack (barrel style)', kind: 'connector', status: 'photo-derived',
-      desc: 'Appears to be a DC barrel-style power jack with its opening towards the board edge. Footprint from the photo; 10.5 mm height, black plastic and steel tabs are assumed typical values.' });
-    const H = 10.5;
+    const g = newGroup('J100-group', { ref: 'J100', label: 'Power jack (barrel style)', kind: 'connector', status: 'photo-verified',
+      desc: 'Appears to be a DC barrel-style power jack with its opening towards the board edge; the designator J100 is printed beside it and legible in the photo. Footprint from the photo. The 8.5 mm height is assumed: a rough matched-camera estimate from gallery-1 suggests a lower value (about 6 to 7 mm in one camera fit; not stable across fits, so low confidence), and the black plastic and steel tabs are typical assumed values. The flat-lay photo also shows some of this part\'s side faces, so its outline and top-face pixels are approximate.' });
+    const H = 8.5;                                         // ASSUMED (see desc): moderate value between the old 10.5 and the gallery-1 estimate
     const plateEnd = 53;                                   // px: front plate x 18..53 (hole plate), main block 53..137
     const o = F.box([18, 20, plateEnd, 132]);
-    const zc = Z(70), yc = 5.2, r = 3.0;                   // barrel bore centre (z from the photo body span, height assumed)
+    const zc = Z(70), yc = H * 0.5, r = 3.0;               // barrel bore centre (z from the photo body span, height assumed)
     // front plate with round bore (extruded in x)
     const shape = new THREE.Shape();
     const zmin = o.cz - o.d / 2, zmax = o.cz + o.d / 2;
@@ -103,9 +165,9 @@ export async function build(ctx, group) {
     pin.rotation.z = Math.PI / 2; pin.position.set(X(plateEnd) - mm(12), yc, zc); g.add(pin);
     // main block (top shows the photo) and rear boss
     B(g, [plateEnd, 20, 137, 132], H, { top: photo, side: M.jack, radius: 0.35 });
-    B(g, [137, 36, 158, 131], 7.4, { top: photo, side: M.jack, radius: 0.3 });
+    B(g, [137, 36, 158, 131], H * 0.7, { top: photo, side: M.jack, radius: 0.3 });
     // steel centre-pin lug at the rear boss (photo: tarnished metal strip with a round eye)
-    B(g, [147, 52, 160, 98], 7.4, { top: photo, side: M.steel });
+    B(g, [147, 52, 160, 98], H * 0.7, { top: photo, side: M.steel });
     // rear solder tab + flat pad, bottom bracket (riser + foot)
     plate(g, [160, 88, 193, 116], 0.35, M.steel);
     plate(g, [60, 138, 120, 165], 0.35, M.steel);
@@ -124,12 +186,13 @@ export async function build(ctx, group) {
   // Small SMD parts right of J100, DPAK-style regulator, extra pair of pads, SMA-style diode, 0805 near J101
   // =====================================================================================================
   {
-    const g = newGroup('smd-row-above-dpak', { label: 'Three small SMD chips', kind: 'passive', status: 'photo-derived',
-      desc: 'Four small chip-size components above the DPAK package (the middle position holds two). Footprints from the photo; 0.6 mm height assumed.' });
-    chip(g, [228, 94, 239, 111], 0.6, 'y', M.ceramic);
-    chip(g, [247, 92, 261, 101], 0.6, 'x', M.chipBody);
-    chip(g, [247, 102, 261, 113], 0.6, 'x', M.chipBody);
-    chip(g, [270, 93, 281, 110], 0.6, 'y', M.ceramic);
+    // The photo (base-top and gallery-2) shows four bare, tinned, reflowed pads here and no component bodies: flat plates only.
+    const g = newGroup('pads-above-dpak', { label: 'Four bare solder pads', kind: 'other', status: 'photo-derived',
+      desc: 'Four bare tinned solder pads above the DPAK-style package: one on the left, two stacked in the middle and one on the right. No component bodies are visible on them in the photo, so they are modelled as flat plates. Footprints from the photo; the 0.12 mm relief is assumed.' });
+    plate(g, [228, 94, 239, 111], 0.12);
+    plate(g, [247, 92, 261, 101], 0.12);
+    plate(g, [247, 102, 261, 113], 0.12);
+    plate(g, [270, 93, 281, 110], 0.12);
   }
   {
     const g = newGroup('dpak', { label: 'DPAK-style power package', kind: 'ic', status: 'photo-verified',
@@ -150,7 +213,7 @@ export async function build(ctx, group) {
     plate(g, [293, 160, 305, 170], 0.15); plate(g, [293, 172, 305, 182], 0.15);
   }
   {
-    const g = newGroup('sma-diode', { label: 'SMA-style SMD diode', kind: 'passive', status: 'photo-derived',
+    const g = newGroup('sma-diode', { label: 'SMA-style SMD part (diode-like)', kind: 'passive', status: 'photo-derived',
       desc: 'Appears to be an SMA-sized two-terminal SMD component (black body, tinned ends). Footprint from the photo; 2.2 mm height assumed.' });
     B(g, [118, 176, 159, 199], 2.2, { y0: 0.3, top: photo, side: M.icBlack });
     B(g, [112, 181, 122, 201], 1.0, { top: photo, side: M.tin });
@@ -170,19 +233,19 @@ export async function build(ctx, group) {
   // J101  two-position green screw terminal (two screw heads)
   // =====================================================================================================
   {
-    const g = newGroup('J101-terminal', { ref: 'J101', label: 'Two-position screw terminal', kind: 'connector', status: 'photo-derived',
-      desc: 'Appears to be a two-position green screw terminal block (two screws, about 2.5 mm pitch in the photo scale). Footprint from the photo; 8.2 mm height and the wire-entry side (towards the board edge, from the 3/4 photo) are assumed.' });
-    const H = 8.2;
+    const g = newGroup('J101-terminal', { ref: 'J101', label: 'Two-position screw terminal', kind: 'connector', status: 'photo-verified',
+      desc: 'Appears to be a two-position green screw terminal block (two screw heads); the designator J101 is printed beside it and legible in the photo. Footprint from the photo. The 6.5 mm height is assumed: a rough matched-camera estimate from gallery-1 suggests a lower value (about 4 to 6 mm; the evidence is weak, so low confidence). The wire-entry side (towards the board edge) is also assumed from the 3/4 photo. The flat-lay photo shows part of this block\'s side face, so its outline and top-face pixels are approximate.' });
+    const H = 6.5;                                                                                // ASSUMED (see desc)
     B(g, [27, 197, 76, 272], H, { top: photo, side: M.green, radius: 0.25 });
-    B(g, [76, 197, 92, 272], 6.2, { top: photo, side: M.green, radius: 0.25 });                 // lower rear step (photo shows a sloped rear face)
+    B(g, [76, 197, 92, 272], H * 0.75, { top: photo, side: M.green, radius: 0.25 });             // lower rear step (photo shows a sloped rear face)
     const screws = [[52.9, 211.1, 0.12], [52.9, 231.8, -0.05]];
     for (const [sx, sy, rot] of screws) {
       prim.cylPart(g, { frame: F, r: mm(9.6), h: 0.5, pos: [X(sx), H - 0.25, Z(sy)], top: photo, side: M.steel, segments: 28 });
       const slot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, mm(17)), M.housingDark);
       slot.position.set(X(sx), H + 0.27, Z(sy)); slot.rotation.y = rot; g.add(slot);
       // wire entry on the -x face (dark square opening)
-      const ent = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.7, 2.1), M.housingDark);
-      ent.position.set(X(27) - 0.02, 3.3, Z(sy)); g.add(ent);
+      const ent = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.5, 2.1), M.housingDark);
+      ent.position.set(X(27) - 0.02, H * 0.4, Z(sy)); g.add(ent);
     }
   }
 
@@ -198,8 +261,8 @@ export async function build(ctx, group) {
   const socketX = X(FACE) - 2.3;                             // fingers edge: ~2 mm into the 2.4 mm-deep slot, so only ~0.3 mm of gold stays visible (gallery-2); review found 0.2 mm was half-inserted
 
   {
-    const g = newGroup('J400-socket', { ref: 'J400', label: 'SO-DIMM-style module socket', kind: 'connector', status: 'photo-derived',
-      desc: 'Long grey socket for the Mercury module (TE logo and a moulded part number are legible on the housing in the photo). Footprint, contact-row pitch and count are read from the photo; housing height (5.2 mm), slot height and the module seating height are assumed typical values.' });
+    const g = newGroup('J400-socket', { ref: 'J400', label: 'SO-DIMM-style module socket', kind: 'connector', status: 'photo-verified',
+      desc: 'Long grey socket for the Mercury module; the designator J400 is printed beside it, and a TE logo and a moulded part number are legible on the housing in the photo. Footprint, contact-row pitch and count are read from the photo; housing height (5.2 mm), slot height and the module seating height are assumed typical values.' });
     const seg = (y0, y1, xl) => {
       B(g, [xl, y0, BACK, y1], HOUSING_H, { top: photo, side: M.housing });
       B(g, [BACK, y0, FACE, y1], SLOT_LO, { top: null, side: M.housing });                     // lower plate
@@ -254,7 +317,7 @@ export async function build(ctx, group) {
     B(o, [FACE, 24, 562, 46], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
     B(o, [FACE, 46, 421, 52], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
     B(o, [470, 49, 502, 55], 0.45, { y0: ARM_Y0, top: photo, side: M.steel });
-    B(o, [FACE, 22.4, 562, 24.2], 1.65, { y0: ARM_Y0 + ARM_T - 1.65, side: M.latch });          // outer web: gives the clip its L profile
+    B(o, [FACE, 22.4, 562, 24.2], 1.65, { y0: ARM_Y0 + ARM_T - 1.65, top: photo, side: M.latch });          // outer web: gives the clip its L profile
     B(o, [548, 26, 566, 46], HOOK_H, { y0: HOOK_Y0, top: photo, side: M.latch });
     hookPin(o, 569, 28, 47);
   }, [0, 1, 0], OPEN);
@@ -263,7 +326,7 @@ export async function build(ctx, group) {
     B(o, [FACE, 633, 433, 647], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
     B(o, [435, 633, 505, 646], 0.45, { y0: ARM_Y0, top: photo, side: M.steel });
     B(o, [517, 633, 535, 643], 0.45, { y0: ARM_Y0, top: photo, side: M.steel });
-    B(o, [FACE, 646, 535, 647.8], 1.65, { y0: ARM_Y0 + ARM_T - 1.65, side: M.latch });          // outer web
+    B(o, [FACE, 646, 535, 647.8], 1.65, { y0: ARM_Y0 + ARM_T - 1.65, top: photo, side: M.latch });          // outer web
     B(o, [548, 609, 566, 629], HOOK_H, { y0: HOOK_Y0, top: photo, side: M.latch });
     hookPin(o, 569, 615, 628);
   }, [0, -1, 0], OPEN);
@@ -273,23 +336,42 @@ export async function build(ctx, group) {
     plate(g, [433, 648, 465, 665], 0.25, M.steel);
   }
   {
+    // Cosmetic only: hides the closed-latch pixels baked into the photo while the latches are open (model.js shows it only then).
     const g = newGroup('J400-latch-ghost-cover', { label: 'Board texture patch (not a part)', kind: 'board', status: 'assumed',
-      desc: 'Flat decal that re-uses a plain region of the board photo so the closed latch arms baked into the photo do not remain as ghosts when the model opens the latches. Not a physical part.' });
-    cleanPatch(g, [424, 28, 566, 58], [424, 62, 566, 82]);
-    cleanPatch(g, [424, 608, 566, 647], [424, 470, 566, 505]);
+      desc: 'Cosmetic decal shown only while the socket latches are open. The flat-lay photo has the closed latch arms and hooks baked into it; this patch covers them with plain solder-mask pixels copied from a clean region of the same photo, tone-matched and feathered at the edges. What lies under a latch arm is not photographed, so nothing drawn by the patch is real copper or silkscreen. Not a physical part.' });
+    // top latch (arm y 24..57, hook ghost x 552..582): fill from the plain strip above the arm, stretched; the silkscreen line at x 568..572 is left alone (real from y 49 down)
+    const topSrc = [428, 8, 490, 20], topBox = [424, 24, 582, 57];
+    latchPatch(g, { name: 'latch-patch-top',
+      pieces: [{ b: [424, 24, 560, 57], f: [5, 1.5, 0, 5] }, { b: [552, 24, 582, 47], f: [0, 1.5, 5, 2] }],
+      map: linMap(topBox, topSrc),
+      gain: { box: topBox, c: [toneGain([428, 8, 454, 20], [424, 10, 450, 20]), toneGain([464, 8, 490, 20], [584, 32, 598, 46]),
+                               toneGain([428, 8, 454, 20], [424, 58, 450, 64]), toneGain([464, 8, 490, 20], [584, 50, 598, 64])] } });
+    // bottom latch (arm y 606..648): fill from the same rows to the right (x + 158, mirrored back at x = 722), which carries the same horizontal
+    // trace lines and tone; the white silkscreen line at x 568..572 is real above and below the hook, so a real strip of it is redrawn across the hidden part
+    const botBox = [424, 604, 582, 648];
+    const botX = (x) => { const r = x + 158; return r > 722 ? 722 - (r - 722) : r; };
+    latchPatch(g, { name: 'latch-patch-bottom',
+      pieces: [{ b: [424, 606, 556, 648], f: [5, 0, 0, 4] }, { b: [550, 604, 582, 634], f: [0, 2, 5, 0] }],
+      map: (x, y) => [botX(x), y],
+      gain: { box: botBox, c: [toneGain([582, 592, 608, 603], [424, 592, 450, 603]), toneGain([676, 592, 700, 603], [586, 592, 610, 603]),
+                               toneGain([628, 650, 678, 657], [470, 650, 520, 657]), toneGain([676, 636, 700, 646], [586, 636, 610, 646])] } });
+    latchPatch(g, { name: 'latch-patch-bottom-line', pieces: [{ b: [568, 604, 573, 634] }], y: 0.05,
+      map: (x, y) => [x, 585 + ((y - 604) / 30) * 16] }).renderOrder = 2;
   }
 
   // =====================================================================================================
-  // TSSOP-48 level shifters x3 (marking LVC16T245 legible in the photo)
+  // TSSOP-48 level shifters, left group of three = ICs 1 to 3 of six (the right group, base-right.js, is 4 to 6).
+  // Marking LVC16T245 legible in the photo.
   // =====================================================================================================
   {
     const bodies = [[467, 84, 521, 186], [467, 191, 521, 294], [467, 303, 521, 404]];
     bodies.forEach((b, i) => {
-      const g = newGroup(`TSSOP48-${i + 1}`, { label: `TSSOP-48 IC ${i + 1} of 3`, kind: 'ic', status: 'photo-verified',
-        desc: 'TSSOP-48 package (24 gull-wing leads per side counted in the photo). The marking legible in the photo includes LVC16T245; what the chip does on UniJack is not claimed. Body height 1.1 mm is assumed. It sits under the Mercury module when the kit is assembled.' });
+      const n = i + 1;
+      const g = newGroup(`TSSOP48-${n}`, { label: `TSSOP-48-style IC ${n}`, kind: 'ic', status: 'photo-verified',
+        desc: `One of six similar 48-lead TSSOP-style packages on the base board (24 gull-wing leads per long side counted in the photo); numbered 1 to 6 here only to tell them apart. This is number ${n}, in the left-hand group of three (1 to 3), which sits under the Mercury module when the kit is assembled; the right-hand group is 4 to 6. The marking legible in the photo includes LVC16T245; what the chip does on UniJack is not claimed. Body height 1.1 mm is assumed.` });
       const o = F.box(b);
       B(g, b, 1.05, { y0: 0.12, top: photo, side: M.icBlack, radius: 0.12 });
-      prim.gullLeads(g, M.tin, { cx: o.cx, cz: o.cz, bodyW: o.w, bodyD: o.d, sides: 'x', n: 24, pitch: mm(4.03), leadLen: 1.5, leadW: 0.26, leadT: 0.14, yMid: 0.5, name: `TSSOP48-${i + 1}-leads` });
+      prim.gullLeads(g, M.tin, { cx: o.cx, cz: o.cz, bodyW: o.w, bodyD: o.d, sides: 'x', n: 24, pitch: mm(4.03), leadLen: 1.5, leadW: 0.26, leadT: 0.14, yMid: 0.5, name: `TSSOP48-${n}-leads` });
     });
   }
 
@@ -297,8 +379,8 @@ export async function build(ctx, group) {
   // J304 USB-A (single, horizontal) - hollow steel shell, cream tongue, gold contacts
   // =====================================================================================================
   {
-    const g = newGroup('J304-usb', { ref: 'J304', label: 'USB-A receptacle', kind: 'connector', status: 'photo-derived',
-      desc: 'Appears to be a single horizontal USB-A receptacle (one opening, steel shell). Footprint from the photo; 6.3 mm height, the open front towards the board edge and the cream tongue are assumed from the 3/4 photo.' });
+    const g = newGroup('J304-usb', { ref: 'J304', label: 'USB-A-style receptacle', kind: 'connector', status: 'photo-verified',
+      desc: 'Appears to be a single horizontal USB-A-style receptacle (one opening, steel shell); the designator J304 is printed beside it and legible in the photo. Footprint from the photo; the 6.3 mm height, the open front towards the board edge and the cream tongue are assumed from the 3/4 photo. The flat-lay photo also shows some of this part\'s side faces along the edges of its top-face pixels, so its outline and top-face pixels are approximate.' });
     const b = [5, 343, 171, 452], H = 6.3, T = 0.35;
     B(g, b, T, { y0: H - T, top: photo, side: M.shell });                                      // top plate (photo: springs, windows)
     B(g, [5, 343, 171, 343 + 4], H - T - 0.2, { y0: 0.2, side: M.shell });                     // side walls
@@ -318,16 +400,16 @@ export async function build(ctx, group) {
   // J303 RJ45 (hollow steel shell, open front, dark contact carrier, 8 gold contacts, two lamps, rear tails)
   // =====================================================================================================
   {
-    const g = newGroup('J303-rj45', { ref: 'J303', label: 'RJ45 jack', kind: 'connector', status: 'photo-derived',
-      desc: 'Appears to be a shielded RJ45 jack: steel shell, open front towards the board edge, eight gold contacts and two green lamps visible in the 3/4 photo, and rear SMD tails. Footprint from the photo; 13 mm height is assumed.' });
-    const b = [13, 518, 165, 680], H = 13.0, T = 0.4;
+    const g = newGroup('J303-rj45', { ref: 'J303', label: 'RJ45-style jack', kind: 'connector', status: 'photo-verified',
+      desc: 'Appears to be a shielded RJ45-style jack: steel shell, open front towards the board edge, eight gold contacts and two green lamps visible in the 3/4 photo, and rear SMD tails; the designator J303 is printed beside it and legible in the photo. Footprint from the photo. The 11.0 mm height is assumed: a rough matched-camera estimate from gallery-1 suggests a lower value (roughly 6 to 10 mm depending on the camera fit; low to medium confidence). The flat-lay photo also shows some of this jack\'s side faces (tan wires and frame edges appear along the lower and front edges of its top-face pixels), so its outline and top-face pixels are approximate.' });
+    const b = [13, 518, 165, 680], H = 11.0, T = 0.4;                                          // H ASSUMED (see desc)
     B(g, b, T, { y0: H - T, top: photo, side: M.shell });                                      // top plate
     B(g, [13, 518, 165, 522], H - T - 0.2, { y0: 0.2, side: M.shell });
     B(g, [13, 676, 165, 680], H - T - 0.2, { y0: 0.2, side: M.shell });
     B(g, [161, 518, 165, 680], H - T - 0.2, { y0: 0.2, side: M.shell });
     B(g, [13, 518, 165, 680], 0.3, { y0: 0.2, side: M.rj45Carrier });
-    // front frame (keeps the opening ~13.7 mm wide x 8 mm tall)
-    const oz0 = 540, oz1 = 658, oy0 = 2.4, oy1 = 10.4;
+    // front frame (keeps the opening ~13.7 mm wide x 7.5 mm tall)
+    const oz0 = 540, oz1 = 658, oy0 = 1.8, oy1 = 9.3;
     B(g, [13, 518, 22, oz0], H - 0.6, { y0: 0.2, side: M.shell });
     B(g, [13, oz1, 22, 680], H - 0.6, { y0: 0.2, side: M.shell });
     B(g, [13, oz0, 22, oz1], oy0 - 0.2, { y0: 0.2, side: M.shell });
@@ -337,15 +419,15 @@ export async function build(ctx, group) {
     B(g, [22, 672, 108, 676], H - T - 0.5, { y0: 0.5, side: M.rj45Carrier });
     B(g, [22, 522, 108, 676], 0.3, { y0: H - T - 0.3, side: M.rj45Carrier });
     // dark plastic contact carrier at the back of the cavity + 8 gold contacts
-    B(g, [108, oz0, 161, oz1], 8.4, { y0: 0.5, side: M.rj45Carrier });
+    B(g, [108, oz0, 161, oz1], 7.4, { y0: 0.5, side: M.rj45Carrier });
     const oc = F.box([22, oz0, 108, oz1]);
     const items = [];
-    for (let k = 0; k < 8; k++) items.push({ p: [oc.cx + oc.w * 0.08, 7.6, oc.cz + (k - 3.5) * 1.19], s: [oc.w * 0.84, 0.12, 0.3] });
+    for (let k = 0; k < 8; k++) items.push({ p: [oc.cx + oc.w * 0.08, 6.6, oc.cz + (k - 3.5) * 1.19], s: [oc.w * 0.84, 0.12, 0.3] });
     prim.instanced(g, prim.UNIT_BOX, M.gold, items, 'J303-contacts');
     // two lamps at the front corners
     for (const zc of [529, 669]) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.2, mm(10)), M.lampGreen);
-      m.position.set(X(13) - 0.03, 11.6, Z(zc)); g.add(m);
+      m.position.set(X(13) - 0.03, H - 1.4, Z(zc)); g.add(m);
     }
     // rear SMD tails (12 leads read from the photo)
     const ys = [554, 565.6, 584.4, 592.9, 601.3, 609.8, 618.2, 626.7, 635, 642, 659, 669.3];
@@ -368,8 +450,8 @@ export async function build(ctx, group) {
   // LED row (8 tiny SMD LEDs) - instanced bodies + pads
   // =====================================================================================================
   {
-    const g = newGroup('LED-row', { label: 'Row of eight SMD LEDs', kind: 'led', status: 'photo-derived',
-      desc: 'Eight tiny chip LEDs along the bottom edge (cream bodies, tinned pads). Positions read from the photo; 0.75 mm height assumed.' });
+    const g = newGroup('LED-row', { label: 'Row of eight LED-style SMD parts', kind: 'led', status: 'photo-derived',
+      desc: 'Eight tiny chip-style parts along the bottom edge (cream bodies, tinned pads) that appear to be LEDs. Positions read from the photo; 0.75 mm height assumed; function not claimed.' });
     const xs = [216, 259.5, 303, 346.6, 390.8, 435, 479, 522.5], cy = 681;
     const bodies = xs.map((x) => ({ p: [X(x), 0.4, Z(cy)], s: [mm(14), 0.8, mm(9)] }));
     const pads = [];
@@ -384,6 +466,7 @@ export async function build(ctx, group) {
     chip(g, [507, 12, 521, 25], 0.8, 'x', M.ceramic);
   }
 
+  uniqueNames(group, 'base');
   return {
     anchors: { socket: { x: socketX, z: socketZ, seatY: SEAT_Y } },
     latches,

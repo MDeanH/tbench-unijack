@@ -24,19 +24,26 @@ export function build(ctx) {
   const photoF = mat.photoTop(tex.mercuryFront), photoB = mat.photoTop(tex.mercuryBack);
   const grp = (name, m) => { const o = new THREE.Group(); o.name = name; g.add(o); prim.meta(o, m); return o; };
 
-  // back photo -> board-local registration (affine, fitted on holes + corners)
-  const R = D.REG, det = R[0][0] * R[1][1] - R[1][0] * R[0][1];
+  // back photo -> board-local registration (projective, see REG_H in mercury-data.js)
+  const Hm = D.REG_H;
+  const inv3 = (m) => {
+    const [[a, b, c], [d, e, f], [g, h, i]] = m;
+    const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g, det = a * A + b * B + c * C;
+    return [[A / det, -(b * i - c * h) / det, (b * f - c * e) / det], [B / det, (a * i - c * g) / det, -(a * f - c * d) / det], [C / det, -(a * h - b * g) / det, (a * e - b * d) / det]];
+  };
+  const Hi = inv3(Hm);
   const reg = {
     /** back px -> board-local [x, z] mm */
     toLocal(xb, yb) {
-      const xf = R[0][0] * xb + R[1][0] * yb + R[2][0], yf = R[0][1] * xb + R[1][1] * yb + R[2][1];
+      const w = Hm[2][0] * xb + Hm[2][1] * yb + Hm[2][2];
+      const xf = (Hm[0][0] * xb + Hm[0][1] * yb + Hm[0][2]) / w, yf = (Hm[1][0] * xb + Hm[1][1] * yb + Hm[1][2]) / w;
       return [f.x(xf), f.z(yf)];
     },
     /** board-local (x, z) mm -> UV into the back texture */
     uv(x, z) {
       const xf = x * s + f.wpx / 2, yf = z * s + f.hpx / 2;
-      const xb = ((xf - R[2][0]) * R[1][1] - (yf - R[2][1]) * R[1][0]) / det;
-      const yb = ((yf - R[2][1]) * R[0][0] - (xf - R[2][0]) * R[0][1]) / det;
+      const w = Hi[2][0] * xf + Hi[2][1] * yf + Hi[2][2];
+      const xb = (Hi[0][0] * xf + Hi[0][1] * yf + Hi[0][2]) / w, yb = (Hi[1][0] * xf + Hi[1][1] * yf + Hi[1][2]) / w;
       return [xb / fB.wpx, 1 - yb / fB.hpx];
     },
     /** back px box -> board-local {cx, cz, w, d} */
@@ -105,10 +112,10 @@ export function build(ctx) {
     for (const grpF of D.FINGERS_F) for (let k = 0; k < grpF.n; k++) front.push({ p: [xc, h / 2, f.z(grpF.y0 + k * grpF.pitch)], s: [L, h, D.FINGER_W_MM] });
     for (const grpB of D.FINGERS_B) for (let k = 0; k < grpB.n; k++) back.push({ p: [xc, -T - h / 2, reg.toLocal(760, grpB.y0 + k * grpB.pitch)[1]], s: [L, h, D.FINGER_W_MM] });
     const gf = grp('fingers-front', { label: 'Edge contact fingers (front)', kind: 'pin', status: 'photo-derived',
-      desc: `Counted on photo 4 (front): ${front.length} gold fingers on this face (${D.FINGERS_F[0].n} on one side of the key notch, ${D.FINGERS_F[1].n} on the other), measured pitch about ${(D.FINGERS_F[0].pitch / s).toFixed(2)} mm. The vendor calls the format DIMM-260; that count per face equals a standard SO-DIMM's 130 contacts per side at 0.5 mm pitch, but this model makes no claim that Mercury follows that standard or its pinout. Finger length, thickness and plating are assumed.` });
+      desc: `Counted on photo 4 (front): ${front.length} gold contacts on this face (${D.FINGERS_F[0].n} on one side of the key notch, ${D.FINGERS_F[1].n} on the other). The contact pitch measures ${(D.FINGERS_F[0].pitch / s).toFixed(3)} mm at the model's scale, which is set by the module's 69.6 mm length. TBench names the module format "DIMM-260" (vendor-stated, from the Crowd Supply campaign page; not checked against any standard here). This model makes no claim that Mercury follows any standard beyond that name, or any pinout. Finger length, thickness and plating are assumed.` });
     prim.instanced(gf, prim.UNIT_BOX, mat.gold, front, 'fingers-front');
     const gb = grp('fingers-back', { label: 'Edge contact fingers (back)', kind: 'pin', status: 'photo-derived',
-      desc: `Counted on photo 4 (back): ${back.length} gold fingers on this face (${D.FINGERS_B[0].n} + ${D.FINGERS_B[1].n}, same key-notch split as the front). Whether the two faces are electrically independent contacts is not shown by any photo. Finger thickness is assumed.` });
+      desc: `Counted on photo 4 (back): ${back.length} gold contacts on this face (${D.FINGERS_B[0].n} + ${D.FINGERS_B[1].n}, same key-notch split as the front). The contact pitch on this face measures ${(D.FINGERS_B[0].pitch / s).toFixed(3)} mm at the model's scale. Whether the two faces are electrically independent contacts is not shown by any photo. Finger length, thickness and plating are assumed.` });
     prim.instanced(gb, prim.UNIT_BOX, mat.gold, back, 'fingers-back');
   }
 
@@ -137,8 +144,8 @@ export function build(ctx) {
   // ---------------------------------------------------------------- FRONT parts
   {   // TC356 BGA
     const b = f.box(D.F.bga);
-    const gg = grp('tc356', { label: 'TC356 BGA IC', kind: 'ic', status: 'photo-verified',
-      desc: 'Package footprint measured on photo 4; its marking reads "Infineon TriCore SAK-TC356TA 64F300S AB" (legible in the photo). Height is assumed; the visible solder-ball rim under the package edge is ILLUSTRATIVE (ball pitch 0.8 mm and diameter 0.45 mm are assumed, the real ball map is hidden). Nothing is claimed about its role inside UniJack.' });
+    const gg = grp('tc356', { label: 'BGA-style IC (marked TC356)', kind: 'ic', status: 'photo-verified',
+      desc: 'Package footprint measured on photo 4; its marking reads "Infineon TriCore SAK-TC356TA 64F300S AB" (legible in the photo). That marking is the verified part; the package type is inferred, because no photo shows the underside, so "BGA-style" is an assumption. The row of solder balls drawn under the package edge is ILLUSTRATIVE (ball pitch 0.8 mm, diameter 0.45 mm and the stand-off are assumed; the real ball map is hidden). Height is assumed. Nothing is claimed about its role inside UniJack.' });
     const standoff = 0.4, bd = 0.45, pitch = 0.8;
     prim.boxPart(gg, { size: [b.w - 2.6, standoff * 0.8, b.d - 2.6], pos: [b.cx, 0.05, b.cz], side: M.balls });
     const balls = [];
@@ -164,8 +171,8 @@ export function build(ctx) {
   }
   {   // silver electrolytic can
     const c = D.F.ecap, cx = f.x(c.c[0]), cz = f.z(c.c[1]), r = f.len(c.r);
-    const gg = grp('ecap', { label: 'Electrolytic capacitor can (marked 100 HFT C53)', kind: 'cap', status: 'photo-verified',
-      desc: 'Silver SMD aluminium can on a black seat with a tin terminal tab; printing "100 HFT C53" is legible in photo 4. Height (about 6 mm) and seat are assumed. The can diameter is taken from the top outline of the can in the photo (about 6.7 mm), which may slightly overstate the true diameter because the top is nearer the camera.' });
+    const gg = grp('ecap', { label: 'Silver can, capacitor-style (marked 100 HFT C53)', kind: 'cap', status: 'photo-verified',
+      desc: 'Appears to be an SMD aluminium electrolytic capacitor can on a black seat with a tin terminal tab (inferred from its shape); printing "100 HFT C53" is legible in photo 4. Height (about 6 mm) and seat are assumed. The can diameter is taken from the top outline of the can in the photo (about 6.7 mm), which may slightly overstate the true diameter because the top is nearer the camera.' });
     prim.cylPart(gg, { r: r + 0.3, h: 0.9, pos: [cx, 0, cz], side: mat.plasticBlack, segments: 48 });
     prim.cylPart(gg, { frame: f, r, h: 5.2, pos: [cx, 0.9, cz], top: photoF, side: M.alu, segments: 56 });
     const bead = new THREE.Mesh(new THREE.TorusGeometry(r, 0.13, 8, 56), M.aluDark);
@@ -180,9 +187,9 @@ export function build(ctx) {
     const off0 = f.z(t.leadsCy) - b.cz, pitch = t.pitch / s;
     gull(gg, mat.tin, { cx: b.cx, cz: b.cz, ext: b.w / 2, axis: 'x', sides: [-1, 1], positions: Array.from({ length: t.n }, (_, i) => off0 + (i - (t.n - 1) / 2) * pitch), len: 1.15, w: 0.3, t: 0.14, hMid: 0.55, name: 'leads' });
   }
-  for (const [key, label, mark, h] of [['ind472', 'Shielded SMD inductor (marked 472)', '472', 4.0], ['ind222', 'Shielded SMD inductor (marked 222)', '222', 3.0]]) {
+  for (const [key, label, mark, h] of [['ind472', 'Inductor-style part (marked 472)', '472', 3.0], ['ind222', 'Inductor-style part (marked 222)', '222', 2.5]]) {
     const gg = grp(key, { label, kind: 'passive', status: 'photo-verified',
-      desc: `Appears to be a shielded SMD inductor; the marking "${mark}" is legible in photo 4. Footprint is the top face as photographed; height (about ${h} mm) is assumed.` });
+      desc: `Appears to be a shielded SMD inductor from its shape; the marking "${mark}" is legible in photo 4 (that marking is the verified part). Footprint is the top face as photographed. Height (about ${h} mm) is assumed, low confidence: the side faces in gallery-1 suggest roughly 2.2 to 3.4 mm for the 472 depending on the camera fit, and the 222 looks slightly lower than the 472.` });
     fbox(gg, D.F[key], h, { side: M.inductor, radius: 0.18 });
   }
   {   // brown rectangular part
@@ -235,7 +242,7 @@ export function build(ctx) {
   const hang = () => { const o = new THREE.Group(); o.position.y = -T; o.scale.y = -1; return o; };   // y up in the group = down in the module
   {   // SOIC-8
     const S = D.B.soic, b = reg.box(S.body);
-    const gg = grp('soic8', { label: '8-lead SOIC (back)', kind: 'ic', status: 'photo-derived',
+    const gg = grp('soic8', { label: 'SOIC-style 8-lead IC (back)', kind: 'ic', status: 'photo-derived',
       desc: 'Black 8-lead gull-wing body (4 leads per long side at about 1.3 mm pitch) on the back face, traced from photo 4 (back). Appears SOIC-8 sized; its marking is not legible enough to quote. Height about 1.4 mm is assumed.' });
     hangBox(gg, b, 1.4, { standoff: 0.1, side: mat.icBlack, radius: 0.08 });
     const lg = hang(); gg.add(lg);
@@ -258,6 +265,6 @@ export function build(ctx) {
   // thickness is ASSUMED. backDepth = lowest back part below the underside (SOIC-8 incl. stand-off); frontHeight = tallest front part (electrolytic can). Both heights assumed.
   g.userData.anchors = { thickness: T, backDepth: 1.5, frontHeight: 6.1 };
   prim.meta(g, { label: 'Mercury Module', kind: 'module', status: 'photo-derived',
-    desc: 'The Mercury module (35.5 x 69.6 mm) modelled from photo 4 (front and back macro): traced outline, notches, holes, edge fingers on both faces and the larger parts with assumed heights. Tiny passives are texture-only unless listed. PCB thickness is assumed.' });
+    desc: 'The Mercury module (35.5 x 69.6 mm; the scale is anchored on the 69.6 mm module length, not on a vendor drawing) modelled from photo 4 (front and back macro): traced outline, notches, holes, edge fingers on both faces and the larger parts with assumed heights. The back photo is registered to the front outline with a fitted projective transform (edges within about 0.1 mm, notches within about 0.3 mm). Tiny passives are texture-only unless listed. PCB thickness is assumed.' });
   return g;
 }

@@ -1,4 +1,9 @@
 <!doctype html>
-<meta charset="utf-8"><title>unijack-3d GLB export</title>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>unijack-3d GLB export</title>
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+<body style="font:14px system-ui,sans-serif;margin:16px">
+<p>Headless GLB export page, driven by <code>tools/export-glb.mjs</code> (add <code>?instancing=1</code> to keep EXT_mesh_gpu_instancing).</p>
+<pre id="status">starting...</pre>
 <script type="module" src="./src/export.js"></script>

@@ -5,8 +5,10 @@
 //   * sixteen identical small surface-mount pin headers J1..J16 (J1-J15 in a 3 x 5 grid, J16 alone top right),
 //     each 2 columns x 5 rows = 10 gold pins standing up out of a short black body, with gull-wing feet on pads.
 // Everything is placed from pixel coordinates read off assets/tex/peri-top.webp (20 px per mm), so the footprints
-// can be checked against the photo with tools/overlay.py. Heights are NOT visible top-down: they are typical values
-// judged from the 3/4 photo and are marked 'assumed'.
+// can be checked against the photo with tools/overlay.py. Heights are NOT visible top-down: they are assumed values
+// judged from the 3/4 photo (gallery-1) and are stated as assumed. Footprints and lead/pad positions are photo-derived.
+// SCALE: this file works in the uniform 20 px/mm space of the texture; src/model.js rectifies the whole board by model/true
+// scale (17.57 px/mm measured from the connector pitch, x and z alike) when it assembles the kit. Heights (y) are not scaled.
 //
 // Geometry strategy (keeps the mesh count low): each physical part is one Group; its cream housing / black body is ONE
 // merged mesh built from boxes (tops of housing pieces are projected from the photo so the top looks like the photo),
@@ -14,14 +16,17 @@
 
 import { planarUV } from '../lib/frame.js';
 
-// ---------------------------------------------------------------- assumed heights (mm), all status 'assumed'
-const H_HOUSING = 3.5;      // receptacle outer wall height above the PCB top
-const H_ISLAND = 3.2;       // central island is a little lower than the walls
-const H_FLOOR = 0.8;        // slot floor
-const H_EAR = 1.6;          // end ears (hold-down brackets)
-const H_TAB = 0.7;          // solder tabs
-const HDR_BODY = 3.0;       // pin-header plastic body (dark part is roughly 40-45% of the pin height in the 3/4 photo)
-const HDR_PIN_TOP = 7.5;    // pin tip height above the PCB (judged 6-9 mm from the 3/4 photo)
+// ---------------------------------------------------------------- assumed heights (mm): every one of these is ASSUMED
+// (not visible top-down). Each was matched by eye and by a camera fitted to the PeriBoard plane in gallery-1; the fit gives
+// a range because the PCB edge strip (a built-in ruler) and the fitted camera disagree by about 12 percent.
+const H_HOUSING = 2.15;     // receptacle outer wall height above the PCB top (range about 1.9 to 2.4)
+const H_ISLAND = 1.8;       // central island is a little lower than the walls
+const H_FLOOR = 0.5;        // slot floor
+const H_EAR = 1.0;          // end ears (hold-down brackets)
+const H_TAB = 0.4;          // solder tabs
+const CONTACT_H = 1.0;      // slot contact height above the slot floor (kept below the island top)
+const HDR_BODY = 1.8;       // pin-header plastic body (low, dark; partly hidden by the pins and their shadow in gallery-1)
+const HDR_PIN_TOP = 4.5;    // pin tip height above the PCB (about 4 to 5 mm from the gallery-1 camera fit)
 
 export function build(ctx) {
   const { THREE, prim, mat, frames, tex, BOARD_T } = ctx;
@@ -36,6 +41,8 @@ export function build(ctx) {
   const tabSide = new THREE.MeshStandardMaterial({ color: '#9aa0a5', roughness: 0.45, metalness: 0.6 });
   const pinGold = new THREE.MeshStandardMaterial({ color: '#e2bf68', roughness: 0.28, metalness: 0.9 });
   const footTin = mat.tin;
+  const footDark = new THREE.MeshStandardMaterial({ color: '#4a5056', roughness: 0.6, metalness: 0.5 });   // far-row tips: dark in the photo
+  const contactBronze = new THREE.MeshStandardMaterial({ color: '#9b7a3c', roughness: 0.4, metalness: 0.75 }); // slot contacts read bronze in the photo
 
   // ---------------------------------------------------------------- merged-box geometry helper
   // A box is { c:[A,B,C,D] (mm corners: A=(x0,z0) B=(x1,z0) C=(x1,z1) D=(x0,z1)), y0, y1, taper, photo }.
@@ -106,37 +113,42 @@ export function build(ctx) {
 
     // instanced leads (flat foot on the PCB + a thin riser up the wall) and gold contacts in the slots
     const map = (u, v) => (orient === 'h' ? [u, v] : [v, u]);            // (along, across) -> texture px
-    const leadItems = [], contactItems = [];
+    // Each lead row may carry its own start offset u0 and pitch (the texture is a warped photo, so the two rows of one connector
+    // can differ by a pixel or two); `dark` rows use a dark tin because the photo shows only dark hairline tips there.
+    const leadItems = [], darkLeadItems = [], contactItems = [];
     const T = 0.12, LW = 0.26, RISER = 0.9, ry = -a;
     for (const row of leads.rows) {
       const dir = Math.sign(row.tip - row.base) || 1, lenMM = Math.abs(row.tip - row.base) / F.s;
+      const items = row.dark ? darkLeadItems : leadItems;
+      const u0 = row.u0 ?? leads.u0, pitch = row.pitch ?? leads.pitch;
       for (let i = 0; i < leads.n; i++) {
-        const u = leads.u0 + i * leads.pitch;
+        const u = u0 + i * pitch;
         const [cx, cy] = mm(rot(...map(u, (row.base + row.tip) / 2)));
-        leadItems.push({ p: [cx, T / 2, cy], s: orient === 'h' ? [LW, T, lenMM] : [lenMM, T, LW], ry });
+        items.push({ p: [cx, T / 2, cy], s: orient === 'h' ? [LW, T, lenMM] : [lenMM, T, LW], ry });
         const [rx, rz] = mm(rot(...map(u, row.base + dir * 0.06 * F.s)));
-        leadItems.push({ p: [rx, RISER / 2, rz], s: orient === 'h' ? [LW, RISER, 0.1] : [0.1, RISER, LW], ry });
+        items.push({ p: [rx, RISER / 2, rz], s: orient === 'h' ? [LW, RISER, 0.1] : [0.1, RISER, LW], ry });
       }
     }
     for (const row of contacts.rows) {
+      const u0 = row.u0 ?? contacts.u0, pitch = row.pitch ?? contacts.pitch;
       for (let i = 0; i < contacts.n; i++) {
-        const u = contacts.u0 + i * contacts.pitch;
+        const u = u0 + i * pitch;
         const [cx, cy] = mm(rot(...map(u, row.v)));
         contactItems.push({ p: [cx, H_FLOOR + contacts.h / 2, cy], s: orient === 'h' ? [0.2, contacts.h, 0.13] : [0.13, contacts.h, 0.2], ry });
       }
     }
-    const lm = prim.instanced(grp, prim.UNIT_BOX, footTin, leadItems, 'leads');
-    const cm = prim.instanced(grp, prim.UNIT_BOX, pinGold, contactItems, 'contacts');
-    void lm; void cm;
+    prim.instanced(grp, prim.UNIT_BOX, footTin, leadItems, 'leads');
+    if (darkLeadItems.length) prim.instanced(grp, prim.UNIT_BOX, footDark, darkLeadItems, 'leads-dark');
+    prim.instanced(grp, prim.UNIT_BOX, contactBronze, contactItems, 'contacts');
     prim.meta(grp, {
-      ref, kind: 'connector', status: 'photo-derived',
+      ref, kind: 'connector', status: 'photo-verified',
       label: `Board-to-board receptacle ${ref}`,
-      desc: `Appears to be a two-row board-to-board receptacle (about ${leads.n} leads per row counted, ~0.5 mm lead pitch measured in the photo). Footprint from the photo; wall height ${H_HOUSING} mm, slot depth and contact shapes assumed. Designator ${ref} is printed on the board.`,
+      desc: `Appears to be a two-row board-to-board receptacle: about ${leads.n} leads per row counted in the photo (the lead pitch is about 11.1 px in the photo texture; the board's millimetre scale rests on an assumed 0.635 mm connector pitch, so a pitch in mm is an assumption here, not a measurement). The designator ${ref} is printed on the board and legible in the photo. Footprint is photo-derived; wall height about ${H_HOUSING} mm, slot depth and contact shapes are assumed.`,
     });
     return grp;
   }
 
-  const SLOTC = { n: 55, h: 2.2 };
+  const SLOTC = { n: 50, h: CONTACT_H };   // 50 contacts per row, same pitch and offset as the leads (they are the same pins)
 
   // J201 - along the top edge (texture x 55..757, y 55..195)
   g.add(receptacle({
@@ -157,8 +169,9 @@ export function build(ctx) {
       { r: [722, 141, 750, 170], y1: H_EAR },
     ],
     tabs: [[42, 121, 64, 155], [741, 94, 760, 130]],
-    leads: { n: 56, u0: 130, pitch: 9.91, rows: [{ base: 170, tip: 196 }, { base: 75, tip: 62 }] },
-    contacts: { ...SLOTC, u0: 135, pitch: 9.91, rows: [{ v: 98 }, { v: 135 }] },
+    // 50 leads per row, pitch 11.09 px, first lead at u = 130.5 (comb-fitted on the near row; the far row's dark tips sit at the same u)
+    leads: { n: 50, u0: 130.5, pitch: 11.09, rows: [{ base: 170, tip: 196 }, { base: 72, tip: 62, dark: true }] },
+    contacts: { ...SLOTC, u0: 130.5, pitch: 11.09, rows: [{ v: 98 }, { v: 138 }] },
   }));
 
   // J101 - along the bottom edge (texture x 50..787, y 1392..1528)
@@ -179,8 +192,9 @@ export function build(ctx) {
       { r: [742, 1400, 768, 1518], y1: H_HOUSING * 0.9 },
     ],
     tabs: [[50, 1442, 80, 1480], [756, 1442, 786, 1480]],
-    leads: { n: 56, u0: 141, pitch: 10.0, rows: [{ base: 1418, tip: 1392 }, { base: 1512, tip: 1528 }] },
-    contacts: { ...SLOTC, u0: 146, pitch: 10.0, rows: [{ v: 1440 }, { v: 1489 }] },
+    // 50 leads per row, pitch 11.15 px, first lead at u = 146.8 (phase read off the slot contacts and lead bars of both rows)
+    leads: { n: 50, u0: 146.8, pitch: 11.15, rows: [{ base: 1418, tip: 1392 }, { base: 1512, tip: 1528 }] },
+    contacts: { ...SLOTC, u0: 147, pitch: 11.15, rows: [{ v: 1440 }, { v: 1489 }] },
   }));
 
   // J301 - vertical on the left (texture x 83..214, y 295..1022); `frame` coordinates are (x, y) px as well
@@ -201,13 +215,15 @@ export function build(ctx) {
       { r: [158, 975, 205, 1000], y1: H_HOUSING * 0.9 },
     ],
     tabs: [[125, 295, 160, 326], [128, 993, 170, 1022]],
-    leads: { n: 55, u0: 386, pitch: 10.11, rows: [{ base: 107, tip: 82 }, { base: 196, tip: 214 }] },
-    contacts: { ...SLOTC, u0: 391, pitch: 10.11, rows: [{ v: 131 }, { v: 179 }] },
+    // 50 leads per column; the two columns are fitted separately (left u0 384.25 / 11.10 px, right 384.5 / 11.17 px)
+    leads: { n: 50, u0: 384.25, pitch: 11.10, rows: [{ base: 107, tip: 82 }, { base: 196, tip: 214, u0: 384.5, pitch: 11.17 }] },
+    contacts: { ...SLOTC, u0: 384.5, pitch: 11.13, rows: [{ v: 131 }, { v: 179 }] },
   }));
 
   // ---------------------------------------------------------------- pin headers J1..J16
-  // Shared geometry, built once around (0,0): 2 columns x 5 rows, measured pitch 1.1 mm (22 px in the texture).
-  const PITCH = 1.1, PX = 0.55, FOOT_X = 2.1;
+  // Shared geometry, built once around (0,0): 2 columns x 5 rows. The pad rows measure 22.75 px apart in the texture (1.1375 mm
+  // in this file's 20 px/mm space); the two pin columns are taken at the same spacing.
+  const PITCH = 22.75 / 20, PX = PITCH / 2, FOOT_X = 2.25;
   const rowsZ = [-2, -1, 0, 1, 2].map((i) => i * PITCH);
   const bodyBoxes = [
     { c: rectMM(0, 0, 2.9, 5.6), y0: 0, y1: HDR_BODY - 0.2 },
@@ -222,7 +238,7 @@ export function build(ctx) {
     // gull-wing lead: stub out of the body side, short vertical leg, foot lying on the pad
     footBoxes.push({ c: rectMM(s * 1.55, z, 0.8, 0.3), y0: 0.7, y1: 0.88 });
     footBoxes.push({ c: rectMM(s * 1.78, z, 0.16, 0.3), y0: 0.0, y1: 0.88 });
-    footBoxes.push({ c: rectMM(s * FOOT_X, z, 1.1, 0.5), y0: 0.0, y1: 0.14 });
+    footBoxes.push({ c: rectMM(s * FOOT_X, z, 1.4, 0.6), y0: 0.0, y1: 0.14 });   // foot fills the photographed solder pad
   }
   const bodyGeo = mergeBoxes(bodyBoxes), pinGeo = mergeBoxes(pinBoxes), footGeo = mergeBoxes(footBoxes);
 
@@ -240,13 +256,15 @@ export function build(ctx) {
     const hg = new THREE.Group(); hg.position.set(x, 0, z);
     hg.add(meshOf(bodyGeo, darkBody, 'body'), meshOf(pinGeo, pinGold, 'pins'), meshOf(footGeo, footTin, 'feet'));
     prim.meta(hg, {
-      ref, kind: 'pin', status: 'photo-derived', label: `Pin header ${ref}`,
-      desc: 'Appears to be a 2 x 5 surface-mount pin header: 10 pins counted in the photos, pitch about 1.1 mm measured. Footprint from the photo; body height 3.0 mm and pin height about 7.5 mm are assumed (judged from the 3/4 photo). Designator ' + ref + ' is printed on the board.',
+      ref, kind: 'pin', status: 'photo-verified', label: `Pin header ${ref}`,
+      desc: `Appears to be a 2 x 5 surface-mount pin header: 10 pins and 10 gull-wing solder pads counted in the photos; the pad rows are about 22.75 px apart in the photo texture (about 1.3 mm at the model scale, which itself rests on an assumed 0.635 mm connector pitch). The designator ${ref} is printed on the board and legible in the photo. Footprint is photo-derived; the body height (about ${HDR_BODY} mm) and the pin height (about ${HDR_PIN_TOP} mm, in a range of about 4 to 5 mm from a camera fitted to gallery-1) are assumed.`,
     });
     g.add(hg);
   }
 
-  prim.meta(g, { label: 'PeriBoard', kind: 'board', status: 'photo-derived', desc: 'Board outline and size derived from photos (40.1 x 77.4 mm); 1.6 mm thickness assumed; the underside is not photographed and is shown plain.' });
+  const dm = ctx.scale.dims_mm?.peri;
+  const sizeTxt = dm ? `about ${dm[0].toFixed(0)} x ${dm[1].toFixed(0)} mm` : 'size not stated';
+  prim.meta(g, { label: 'PeriBoard', kind: 'board', status: 'photo-derived', desc: `Board outline and size (${sizeTxt}; not independently verified, because the scale rests on an assumed 0.635 mm pitch of its board-to-board connectors) derived from the photos; 1.6 mm thickness assumed; the underside is not photographed and is shown plain.` });
   g.userData.anchors = {};
   return g;
 }

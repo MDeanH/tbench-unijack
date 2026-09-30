@@ -2,13 +2,18 @@
 // (front, 'F') or assets/tex/mercury-back.webp (back, 'B'), both 801 x 1568 px at 22.53 px/mm, measured with
 // tools/crop.py grids (see qa-out/mercury/*.png). Nothing here is CAD or a vendor dimension.
 
-/** Affine registration of the BACK photo onto the FRONT photo (fitted on the 4 mounting-hole centres and the 4 board corners;
- *  residual <= 3.6 px = 0.16 mm). The back photo is a view from below, so x is mirrored.
- *  [xf, yf] = [xb, yb, 1] * M */
-export const REG = [
-  [-1.00580813, 0.00364825],
-  [0.00958769, 1.0018371],
-  [790.697274, -4.53363838],
+/** Projective registration (homography) of the BACK photo onto the FRONT photo, row-major 3x3, back px -> front px:
+ *  [xf, yf, w] = REG_H * [xb, yb, 1],  then divide by w. The back photo is a view from below, so x is mirrored.
+ *  Fitted by minimising the boundary distance (truncated at 8 px) between the back photo's board silhouette and the outline traced on
+ *  the front photo (both directions), with the four mounting-hole centres as a soft constraint. It replaces an earlier affine fit
+ *  (holes + corners only) that left the key notch off by up to 7.9 px. Residuals of this fit: holes <= 2.4 px (0.10 mm); left/right
+ *  edges and fingers edge <= 2.8 px (0.12 mm); the three notches <= 6.4 px (0.28 mm; part of that is a real difference in notch
+ *  shape between the two photos). Gold via dots that show on both faces still sit 4 to 5 px apart between the photos: that is the
+ *  parallax of a 1.2 mm board seen from two viewpoints, not a registration error. Fit scripts: qa-out/fix-peri-mercury/homog*.py. */
+export const REG_H = [
+  [-1.000900831500494, 0.008334525956585044, 787.9050604991129],
+  [0.0023701615932154472, 0.9957737445051139, -4.142280937329417],
+  [-7.350487257792594e-07, -3.7691910944587216e-06, 1.0],
 ];
 
 /** Mounting-hole centres in FRONT px (centres of the gold annulus fitted on the photo). Outer ring diameter measures 69 px = 3.06 mm,

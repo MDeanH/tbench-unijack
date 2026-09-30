@@ -8,6 +8,7 @@
 //   flatPads     thin flat pads / terminations (merged, photo-topped)
 //   pinSet       vertical pins / contacts (instanced, solid colour)
 //   ballGrid     instanced solder balls
+//   uniqueNames  give every generic sub-node (body, pins, leads, ...) a name that is unique on the board (GLB node names, parts list)
 
 /** A single extruded box from a pixel bbox (wrapper around prim.boxPart). */
 export function pxBoxPart(ctx, parent, b, h, { y0 = 0, top, side, radius = 0, name } = {}) {
@@ -100,4 +101,24 @@ export function ballGrid(ctx, parent, mat, list, { d = 0.4, yc = 0.14, name = 'b
   im.instanceMatrix.needsUpdate = true; im.castShadow = im.receiveShadow = true; im.name = name;
   parent.add(im);
   return im;
+}
+
+/**
+ * Make every named sub-node of every part in `group` unique: "<board>/<part>/<child>" (a counter is added if the same child name
+ * is used twice inside one part). <part> is the printed designator if there is one, else the part's group name or label.
+ * The part groups themselves and nested parts that carry their own label keep their names. Call once at the end of a builder.
+ */
+export function uniqueNames(group, board = 'base') {
+  const used = new Set();
+  for (const part of group.children) {
+    const pn = part.userData?.ref || part.name || part.userData?.label || 'part';
+    part.traverse((d) => {
+      if (d === part || !d.name || d.userData?.label) return;
+      const stem = `${board}/${pn}/${d.name}`;
+      let n = stem, k = 1;
+      while (used.has(n)) n = `${stem}#${++k}`;
+      used.add(n); d.name = n;
+    });
+  }
+  return group;
 }
