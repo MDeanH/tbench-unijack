@@ -34,6 +34,7 @@ const GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-
 const browser = await chromium.launch({ executablePath: exe, args: GL });
 fs.mkdirSync(OUT, { recursive: true });
 const report = [], failures = [];
+const openPanel = async (page) => { if (await page.locator('#parts-panel').isHidden()) { await page.click('#btn-parts'); await page.waitForTimeout(300); } };   // the UI closes the panel after a selection on short stages
 const check = (where, name, ok, detail) => { if (!ok) failures.push(`${where}: ${name}${detail !== undefined ? ' -> ' + JSON.stringify(detail) : ''}`); return ok; };
 
 // console output: errors and warnings are both kept; GL driver chatter from software rendering is listed apart so it cannot hide a real warning
@@ -46,7 +47,7 @@ async function session(name, ctxOpts, script, { gl = true } = {}) {
   if (gl) await page.waitForFunction(() => window.__viewerReady, null, { timeout: 180000 });
   const shot = async (n, opts = {}) => page.screenshot({ path: path.join(OUT, `${name}-${n}.png`), ...opts });
   const entry = { name, result: {} }; report.push(entry);
-  await script(page, shot, entry.result, name);
+  try { await script(page, shot, entry.result, name); } catch (e) { check(name, 'session completed without throwing', false, String((e && e.message) || e).split('\n')[0].slice(0, 300)); }
   entry.errors = errors; entry.warnings = warnings; entry.driverWarnings = driver.length;
   entry.overflow = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.documentElement.scrollHeight, innerHeight]);
   check(name, 'console errors', errors.length === 0, errors); check(name, 'console warnings', warnings.length === 0, warnings);
@@ -151,7 +152,7 @@ for (const [w, h] of sizes) {
       const target = hid.find((x) => /SOT-23/.test(x[0]) && /back/.test(x[0])) || hid[0];
       if (await page.locator('#parts-panel').isHidden()) { await page.click('#btn-parts'); await page.waitForTimeout(300); }   // the phone UI closes the panel after a selection when the stage is short
       await page.evaluate(() => { document.getElementById('parts-panel').classList.remove('peek'); const i = document.getElementById('part-filter'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); });
-      await page.fill('#part-filter', target[0].slice(0, 14)); await page.waitForTimeout(200);
+      await openPanel(page); await page.fill('#part-filter', target[0].slice(0, 14)); await page.waitForTimeout(200);
       await page.locator('#part-list button:not([hidden])', { hasText: target[1] }).first().click(); await page.waitForTimeout(2600);
       const hv = res.hiddenPick = { part: target, explode: await page.evaluate(() => window.__unijack.kit.state.explode), vis: await page.evaluate(visibleShare, target[0]), card: await page.evaluate(`(${partProbe.toString()})()`) };
       await shot('4-hidden-part');
@@ -188,11 +189,11 @@ if (args.flow !== '0' && args.flow !== 0) {
     check('desktop', 'Play while exploded animates the explosion closed (not a snap)', mid > 0.02 && mid < 0.98 && res.playWhileExploded.explodeEnd === 0 && res.playWhileExploded.insertionEnd === 1, res.playWhileExploded);
     await page.click('#btn-parts'); await page.waitForTimeout(600);
     res.partsListed = await page.$$eval('#part-list button', (b) => b.length);
-    await page.fill('#part-filter', 'zzzz'); await page.waitForTimeout(200);
+    await openPanel(page); await page.fill('#part-filter', 'zzzz'); await page.waitForTimeout(200);
     res.emptyFilter = { empty: await page.isVisible('#part-empty'), headings: await page.$$eval('#part-list h3:not([hidden])', (h) => h.length) }; check('desktop', 'empty filter shows a message and hides headings', res.emptyFilter.empty && res.emptyFilter.headings === 0, res.emptyFilter);
-    await page.fill('#part-filter', 'J30'); await page.waitForTimeout(200);
+    await openPanel(page); await page.fill('#part-filter', 'J30'); await page.waitForTimeout(200);
     res.filterJ30 = await page.$$eval('#part-list h3:not([hidden])', (h) => h.map((x) => x.textContent)); await shot('4a-filtered');
-    await page.fill('#part-filter', '');
+    await openPanel(page); await page.fill('#part-filter', '');
     await page.evaluate(() => { const u = window.__unijack; const p = u.kit.parts.find((x) => x.userData.ref) || u.kit.parts[0]; if (p) u.select(p); });
     await page.waitForTimeout(600); await shot('4-parts-selected');
     res.statusNoteOnCard = await page.evaluate(() => document.querySelector('#card .note')?.textContent || null);
@@ -218,7 +219,7 @@ if (args.flow !== '0' && args.flow !== 0) {
     await page.evaluate(() => window.__unijack.explodeTo(1)); await page.waitForTimeout(1800);
     res.guides = await page.evaluate(() => { const g = window.__unijack.kit.root.getObjectByName('explode-guides'); const a = g.geometry.attributes.position; let live = 0; for (let i = 0; i < a.count; i += 2) { const dx = a.getX(i) - a.getX(i + 1), dy = a.getY(i) - a.getY(i + 1), dz = a.getZ(i) - a.getZ(i + 1); if (Math.hypot(dx, dy, dz) > 0.01) live++; } return { visible: g.visible, liveSegments: live }; });
     check('desktop', 'no guide lines to hidden boards', res.guides.liveSegments === 0, res.guides); await shot('7-hidden-boards-exploded');
-    await page.fill('#part-filter', 'Pin header J1'); await page.waitForTimeout(150);
+    await openPanel(page); await page.fill('#part-filter', 'Pin header J1'); await page.waitForTimeout(150);
     await page.locator('#part-list button:not([hidden])').first().click(); await page.waitForTimeout(2200);
     res.hiddenBoardRow = { periChipPressed: await page.getAttribute('[data-show="peri"]', 'aria-pressed'), card: await page.evaluate(() => !document.getElementById('card').hidden) };
     check('desktop', 'choosing a part of a hidden board shows the board again', res.hiddenBoardRow.periChipPressed === 'true' && res.hiddenBoardRow.card, res.hiddenBoardRow); await shot('8-hidden-board-reshown');
