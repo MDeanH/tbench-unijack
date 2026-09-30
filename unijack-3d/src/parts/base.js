@@ -3,7 +3,7 @@
 export async function build(ctx) {
   const { THREE, prim, mat, frames, tex, BOARD_T } = ctx;
   const g = new THREE.Group(); g.name = 'base';
-  prim.boardSlab(g, { frame: frames.base, topTex: tex.base, mats: mat, thickness: BOARD_T, radius: 0.8 });
+  prim.boardSlab(g, { frame: frames.base, topTex: tex.base, mats: mat, thickness: BOARD_T, radius: 0.8, box: ctx.scale.board_px_box?.base });
   prim.meta(g, { label: 'UniJack base board', kind: 'board', status: 'photo-derived', desc: 'Board outline and size derived from the flat-lay photo; 1.6 mm thickness assumed.' });
   g.userData.anchors = {};
   g.userData.latches = [];

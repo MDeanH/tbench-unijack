@@ -202,7 +202,7 @@ function buildList() {
   for (const o of kit.parts) by[boardOf(o)].push(o);
   for (const k of Object.keys(by)) {
     if (!by[k].length) continue;
-    by[k].sort((a, b) => (a.userData.ref || '~').localeCompare(b.userData.ref || '~', undefined, { numeric: true }) || a.userData.label.localeCompare(b.userData.label));
+    by[k].sort((a, b) => (!!b.userData.ref - !!a.userData.ref) || (a.userData.ref || '').localeCompare(b.userData.ref || '', undefined, { numeric: true }) || a.userData.label.localeCompare(b.userData.label));   // designators first
     list.append(el('h3', null, `${GROUPS[k]} (${by[k].length})`));
     for (const o of by[k]) {
       const b = el('button'); b.dataset.q = `${o.userData.ref || ''} ${o.userData.label}`.toLowerCase();

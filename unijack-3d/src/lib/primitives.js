@@ -95,13 +95,17 @@ export function gullLeads(parent, mat, { cx, cz, bodyW, bodyD, sides = 'x', n, p
 }
 
 /** The PCB itself: a slab whose top face shows the photo (top surface at y = 0, body below). */
-export function boardSlab(parent, { frame, topTex, bottomTex = null, mats, thickness = 1.6, radius = 0.8, name = 'pcb' }) {
-  const top = mats.photoTop(topTex, { roughness: 0.55, env: 0.5 });
-  const bottom = bottomTex ? mats.photoTop(bottomTex, { roughness: 0.55, env: 0.5 }) : mats.maskBottom;
-  const geo = new RoundedBoxGeometry(frame.W, thickness, frame.D, 3, radius);
+export function boardSlab(parent, { frame, topTex, bottomTex = null, mats, thickness = 1.6, radius = 0.8, name = 'pcb', box = null }) {
+  // `box` = [x0,y0,x1,y1] texture pixels of the real board inside the texture (crops carry a little white margin).
+  // The slab covers only that area; the texture and every pixel coordinate stay unchanged.
+  const b = box ? frame.box(box) : { cx: 0, cz: 0, w: frame.W, d: frame.D };
+  const top = mats.photoTop(topTex);
+  const bottom = bottomTex ? mats.photoTop(bottomTex) : mats.maskBottom;
+  const geo = new RoundedBoxGeometry(b.w, thickness, b.d, 3, radius);
   geo.translate(0, -thickness / 2, 0);
-  planarUV(geo, frame, [0, 0, 0], 0, { mirrorBottom: !!bottomTex });
+  planarUV(geo, frame, [b.cx, 0, b.cz], 0, { mirrorBottom: !!bottomTex });
   const m = new THREE.Mesh(geo, [mats.fr4Edge, mats.fr4Edge, top, bottom, mats.fr4Edge, mats.fr4Edge]);
+  m.position.set(b.cx, 0, b.cz);
   m.name = name; m.receiveShadow = true; m.castShadow = true;
   m.userData = { kind: 'board', label: 'PCB', status: 'photo-derived', desc: 'Outline and size derived from photos; 1.6 mm thickness is assumed.' };
   parent.add(m);
@@ -142,8 +146,8 @@ export function shapeBoard(parent, { frame, outline, holes = [], topTex, bottomT
   geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3));
   groups.forEach((g) => geo.addGroup(g.start, g.count, g.mi));
   planarUV(geo, frame, [0, 0, 0], 0, { mirrorBottom: !!bottomTex });
-  const top = mats.photoTop(topTex, { roughness: 0.55, env: 0.5 });
-  const bottom = bottomTex ? mats.photoTop(bottomTex, { roughness: 0.55, env: 0.5 }) : mats.maskBottom;
+  const top = mats.photoTop(topTex);
+  const bottom = bottomTex ? mats.photoTop(bottomTex) : mats.maskBottom;
   const m = new THREE.Mesh(geo, [top, bottom, mats.fr4Edge]);
   m.name = name; m.castShadow = m.receiveShadow = true;
   m.userData = { kind: 'board', label: 'PCB', status: 'photo-derived', desc: 'Outline and size derived from photos; thickness is assumed.' };

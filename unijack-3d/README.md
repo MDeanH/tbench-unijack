@@ -32,7 +32,7 @@ from above and has real depth from any other angle.
 
 | item | status |
 |---|---|
-| Board outlines and sizes: base 166.5 x 80.0 mm, PeriBoard 40.1 x 77.4 mm, Mercury 35.5 x 69.6 mm | photo-derived. Scale anchored on Mercury's 69.6 mm SO-DIMM length, cross-checked against the 14 mm Lattice iCE40HX8K package (measures within 2 percent). |
+| Board outlines and sizes: base about 161 x 80 mm, PeriBoard about 40 x 77 mm, Mercury about 35.5 x 69.6 mm | photo-derived. The scale is anchored on Mercury's 69.6 mm SO-DIMM length and cross-checked three ways: the gold contact pitch measures 0.498 mm against the standard 0.5 mm; the same module's contact strip spans the same proportion of pixels (ratio 0.385, four separate measures agree) in the flat-lay and macro photos; and the round mounting pads measure round (width/height 0.98 to 1.05), so the photos have square pixels. Mercury's 35.5 mm width is taller than the 30 mm JEDEC SO-DIMM; no Mercury drawing was checked. The 14 mm Lattice package is not used as an anchor (it measures roughly 15 x 13 mm by eye). |
 | Part footprints and positions | photo-derived (overlay-checked against the photos, see `tools/overlay.py`) |
 | Designators (J100, J400, ...) and chip markings | photo-verified: only text legible in a photo is used |
 | Part heights, plastic/metal colours | **assumed** (typical values) |

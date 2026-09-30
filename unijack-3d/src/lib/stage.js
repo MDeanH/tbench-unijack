@@ -6,7 +6,7 @@ export const BG = '#080b10';
 /** Lighting rig shared by the viewer and the QA renderer so QA images show what users see. */
 export function makeStage(renderer, { shadows = true } = {}) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = THREE.NeutralToneMapping;   // Khronos PBR Neutral: keeps solder-mask hue and saturation (ACES lifts red in saturated teal)
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;

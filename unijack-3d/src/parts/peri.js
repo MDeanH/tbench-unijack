@@ -27,12 +27,13 @@ export function build(ctx) {
   const { THREE, prim, mat, frames, tex, BOARD_T } = ctx;
   const F = frames.peri;
   const g = new THREE.Group(); g.name = 'peri';
-  prim.boardSlab(g, { frame: F, topTex: tex.peri, mats: mat, thickness: BOARD_T });
+  prim.boardSlab(g, { frame: F, topTex: tex.peri, mats: mat, thickness: BOARD_T, box: ctx.scale.board_px_box?.peri });
 
   // ---------------------------------------------------------------- materials
   const photo = mat.photoTop(tex.peri, { roughness: 0.5, env: 0.45 });      // one shared photo material
   const cream = new THREE.MeshStandardMaterial({ color: '#e4dfd0', roughness: 0.42, metalness: 0 });
-  const darkBody = new THREE.MeshStandardMaterial({ color: '#15171a', roughness: 0.5, metalness: 0 });
+  const darkBody = new THREE.MeshStandardMaterial({ color: '#1b1e22', roughness: 0.5, metalness: 0 });
+  const tabSide = new THREE.MeshStandardMaterial({ color: '#9aa0a5', roughness: 0.45, metalness: 0.6 });
   const pinGold = new THREE.MeshStandardMaterial({ color: '#e2bf68', roughness: 0.28, metalness: 0.9 });
   const footTin = mat.tin;
 
@@ -101,7 +102,7 @@ export function build(ctx) {
     for (const r of measRects) housing.push({ c: measCorners(...r.r), y0: r.y0 ?? 0, y1: r.y1, photo: r.photo ?? true });
     for (const r of tabs) tabBoxes.push({ c: measCorners(...r), y0: 0, y1: H_TAB, photo: true });
     const hm = meshOf(mergeBoxes(housing, { uvFrame: F }), [cream, photo], 'housing'); grp.add(hm);
-    const tm = meshOf(mergeBoxes(tabBoxes, { uvFrame: F }), [mat.darkSteel, photo], 'solder-tabs'); grp.add(tm);
+    const tm = meshOf(mergeBoxes(tabBoxes, { uvFrame: F }), [tabSide, photo], 'solder-tabs'); grp.add(tm);
 
     // instanced leads (flat foot on the PCB + a thin riser up the wall) and gold contacts in the slots
     const map = (u, v) => (orient === 'h' ? [u, v] : [v, u]);            // (along, across) -> texture px

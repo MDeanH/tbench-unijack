@@ -31,8 +31,8 @@ Texture pixel to mm: `frame.x(px)`, `frame.z(py)`, `frame.len(p)`, `frame.box([x
 | peri-top.webp | 803 x 1548 | 20.0 | `ctx.frames.peri` (40.1 x 77.4 mm) |
 | mercury-front.webp / mercury-back.webp | 801 x 1568 | 22.5 | `ctx.frames.mercuryFront` / `mercuryBack` (35.5 x 69.6 mm; fingers edge on the LEFT of the front texture) |
 
-Scale anchors: Mercury length = 69.6 mm (SO-DIMM length, derived); cross-checked with the Lattice iCE40HX8K body
-(14 x 14 mm datasheet) which measures 15.1 x 13.3 mm in the photo (within 2% on average).
+Scale anchors: Mercury length = 69.6 mm (SO-DIMM length, derived). Verified: contact pitch 0.498 mm vs the standard 0.5 mm; contact-strip span ratio between the flat-lay and macro photos 0.385 (four measures agree); round mounting pads measure round (0.98-1.05), so pixels are square. Do NOT use nominal package sizes (TSSOP body, Lattice BGA) to second-guess the scale: top-face outlines are smaller than package outlines and quick blob measures of the Lattice are unreliable.
+The textures carry a little white margin: the REAL board is the `board_px_box` inside the texture (data/scale.json); `prim.boardSlab({ box })` trims the slab to it without moving any pixel coordinate.
 
 ## How parts are made
 

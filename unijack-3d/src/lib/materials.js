@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+export const PHOTO_GAIN = 0.41;   // calibrated (see photoTop)
+export const PHOTO_ENV = 0.05;
+
 /** Shared PBR material library. Colours are illustrative, chosen to read like the photos. */
 export function makeMaterials() {
   const std = (color, roughness, metalness = 0, extra = {}) =>
@@ -22,9 +25,14 @@ export function makeMaterials() {
     usbGold: std('#c58a2a', 0.3, 0.9),
     ceramic: std('#b9a98c', 0.6),
     ledLens: std('#e8e4d8', 0.4),
-    /** Photo-textured top face. The photo already contains its own lighting, so keep env response modest. */
-    photoTop(map, { roughness = 0.62, env = 0.55 } = {}) {
-      return new THREE.MeshStandardMaterial({ map, roughness, metalness: 0, envMapIntensity: env });
+    /**
+     * Photo-textured face. The photo already contains its own lighting and highlights, so this material must NOT re-light it
+     * at full strength: `gain` scales the albedo and the reflection is kept low. Calibrated so a top-down render matches the
+     * photo's mean solder-mask colour (tools/colorcal.py). Override with window.__PHOTO_GAIN for calibration runs.
+     */
+    photoTop(map, { roughness = 0.8, env = PHOTO_ENV } = {}) {
+      const g = globalThis.__PHOTO_GAIN ?? PHOTO_GAIN;
+      return new THREE.MeshStandardMaterial({ map, color: new THREE.Color(g, g, g), roughness, metalness: 0, envMapIntensity: globalThis.__PHOTO_ENV ?? env });
     },
   };
 }

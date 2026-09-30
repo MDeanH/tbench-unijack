@@ -12,6 +12,8 @@ const num = (k, d) => (q.has(k) ? parseFloat(q.get(k)) : d);
 
 const KIND_COLOR = { connector: 0xff3b30, ic: 0x34c759, passive: 0xffcc00, cap: 0xff9500, pin: 0xaf52de, latch: 0x5ac8fa, led: 0xff2d92, module: 0x0a84ff, other: 0xffffff };
 
+globalThis.__PHOTO_GAIN = q.has('gain') ? parseFloat(q.get('gain')) : undefined;   // calibration sweeps
+globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
 (async () => {
   try {
     const kit = await createUniJack();
