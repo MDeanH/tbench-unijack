@@ -29,7 +29,8 @@ export function boxPart(parent, { frame, size: [w, h, d], pos: [cx, y0 = 0, cz],
   geo.translate(0, h / 2, 0);
   const m = new THREE.Mesh(geo, [side, side, top || side, bottom || side, side, side]);
   m.position.set(cx, y0, cz); m.rotation.y = rotY;
-  if (top && top.map && frame) planarUV(geo, frame, [cx, y0, cz], rotY);
+  // parts hanging from the BACK of a board: pass a photo `bottom` material (back photo) and they get mirrored-x bottom UVs
+  if (((top && top.map) || (bottom && bottom.map)) && frame) planarUV(geo, frame, [cx, y0, cz], rotY, { mirrorBottom: !!(bottom && bottom.map) });
   if (name) m.name = name;
   if (ud) Object.assign(m.userData, ud);
   m.castShadow = m.receiveShadow = true;
@@ -43,7 +44,7 @@ export function cylPart(parent, { frame, r, h, pos: [cx, y0 = 0, cz], top, side,
   geo.translate(0, h / 2, 0);
   const m = new THREE.Mesh(geo, [side, top || side, bottom || side]);
   m.position.set(cx, y0, cz);
-  if (top && top.map && frame) planarUV(geo, frame, [cx, y0, cz], 0);
+  if (((top && top.map) || (bottom && bottom.map)) && frame) planarUV(geo, frame, [cx, y0, cz], 0, { mirrorBottom: !!(bottom && bottom.map) });
   if (name) m.name = name;
   if (ud) Object.assign(m.userData, ud);
   m.castShadow = m.receiveShadow = true;

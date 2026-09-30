@@ -41,6 +41,7 @@ Scale anchors: Mercury length = 69.6 mm (SO-DIMM length, derived); cross-checked
 * Extruded parts whose TOP should look like the photographed part: `prim.boxPart` / `prim.cylPart` with
   `top: mat.photoTop(ctx.tex.base)` (planar UV from the photo) and a solid `side` material from `ctx.mat`.
   The same texture is shared by all parts of a board; create `photoTop` once per builder and reuse it.
+* Parts on the BACK of a board (Mercury only): extrude them downward (`y0 = -thickness - h`), give them `bottom: mat.photoTop(ctx.tex.mercuryBack)` and `frame: ctx.frames.mercuryBack`; their bottom faces then get mirrored-x UVs automatically (a back photo is viewed from below).
 * Repeated small things (IC leads, header pins, contacts): `prim.instanced` / `prim.gullLeads` (one draw call).
 * PCB body: `prim.boardSlab` (rectangle) or `prim.shapeBoard` (outline with notches and round holes, separate front/back photo).
 * Materials: `ctx.mat.*` (extend locally if needed; do not edit `src/lib/*`).
