@@ -1,0 +1,5 @@
+node_modules/
+*.tmp
+qa-out/
+.DS_Store
+source-photos/

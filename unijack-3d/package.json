@@ -1,0 +1,17 @@
+{
+  "name": "unijack-3d",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Photo-anchored, illustrative 3D model of the UniJack kit (base board, Mercury module, PeriBoard). Not CAD.",
+  "type": "module",
+  "scripts": {
+    "textures": "python3 tools/extract.py",
+    "serve": "python3 -m http.server 4173 --bind 127.0.0.1",
+    "qa": "node tools/qa-render.mjs",
+    "glb": "node tools/export-glb.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0",
+    "three": "0.186.1"
+  }
+}

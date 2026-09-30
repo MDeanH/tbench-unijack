@@ -1,0 +1,106 @@
+{
+  "units": "mm",
+  "note": "PHOTO-DERIVED illustrative dimensions; not CAD. Scale anchored on the 69.6 mm SO-DIMM length of Mercury (derived), cross-checked against the 14 mm Lattice iCE40HX8K package (datasheet).",
+  "px_per_mm": {
+    "flat_lay": 8.721,
+    "macro": 22.529
+  },
+  "dims_mm": {
+    "base": [
+      166.5,
+      80.0
+    ],
+    "peri": [
+      40.1,
+      77.4
+    ],
+    "mercury": [
+      35.5,
+      69.6
+    ]
+  },
+  "tex_px": {
+    "base": [
+      1452,
+      698
+    ],
+    "peri": [
+      803,
+      1548
+    ],
+    "mercury": [
+      801,
+      1568
+    ]
+  },
+  "tex_px_per_mm": {
+    "base": 8.72,
+    "peri": 20,
+    "mercury": 22.53
+  },
+  "fpga_cross_check": {
+    "measured_mm": [
+      15.14,
+      13.3
+    ],
+    "datasheet_mm": [
+      14,
+      14
+    ]
+  },
+  "peri_ncc": 0.659,
+  "source_boxes": {
+    "flat_lay": {
+      "mod": [
+        368,
+        75,
+        681,
+        682
+      ],
+      "base": [
+        773,
+        32,
+        2225,
+        730
+      ],
+      "peri": [
+        2306,
+        43,
+        2656,
+        718
+      ]
+    },
+    "macro": {
+      "front": [
+        610,
+        60,
+        1406,
+        1623
+      ],
+      "back": [
+        1594,
+        50,
+        2392,
+        1623
+      ]
+    },
+    "peri_quad_in_gallery2": [
+      [
+        2064.0,
+        22.5
+      ],
+      [
+        2886.0,
+        58.5
+      ],
+      [
+        2914.5,
+        1620.0
+      ],
+      [
+        2073.0,
+        1624.5
+      ]
+    ]
+  }
+}
