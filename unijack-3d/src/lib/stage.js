@@ -28,7 +28,7 @@ export function makeStage(renderer, { shadows = true } = {}) {
   const rim = new THREE.DirectionalLight('#6fd6ff', 1.2);
   rim.position.set(120, 60, -130); scene.add(rim);
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.ShadowMaterial({ opacity: 0.42 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.ShadowMaterial({ opacity: 0.3 }));
   ground.rotation.x = -Math.PI / 2; ground.position.y = -1.75; ground.receiveShadow = true; ground.name = 'ground';
   scene.add(ground);
   return { scene, key, rim, ground, env };

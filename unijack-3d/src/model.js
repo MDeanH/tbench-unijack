@@ -8,7 +8,8 @@ const ease = (t) => t * t * (3 - 2 * t);
 // (take them from Jens's insertion video). SO-DIMM style: enter at an angle, then press down.
 const INSERT_ANGLE = THREE.MathUtils.degToRad(28);
 const SLIDE = 22;            // mm along the tilted axis at the fully separated pose
-const EXPLODE_MERCURY_Y = 42, EXPLODE_PERI_Y = 26, EXPLODE_PERI_X = 34;
+// Exploded view: separate along the mating axis (straight up) so it is obvious what mates with what.
+const EXPLODE_MERCURY_Y = 46, EXPLODE_PERI_Y = 30, EXPLODE_PERI_X = 0;
 
 /**
  * Builds the whole kit from the three part modules and returns a small control API.
@@ -35,6 +36,31 @@ export async function createUniJack({ baseUrl } = {}) {
     return { ...l, axis: new THREE.Vector3(...l.axis).normalize() };
   });
 
+  // dashed guide lines from each board's seated position to where it is now (visible while exploded / not seated)
+  const guideGeo = new THREE.BufferGeometry();
+  guideGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 2 * 3), 3));
+  const guideMat = new THREE.LineDashedMaterial({ color: 0x74e2f4, dashSize: 1.8, gapSize: 1.4, transparent: true, opacity: 0, depthWrite: false });
+  const guides = new THREE.LineSegments(guideGeo, guideMat);
+  guides.name = 'explode-guides'; guides.frustumCulled = false; guides.visible = false; guides.renderOrder = 5;
+  root.add(guides);
+  const [mW, mL] = ctx.dims.mercury, [pW, pD] = ctx.dims.peri;
+  const tmp = new THREE.Vector3();
+  function updateGuides(e) {
+    const a = guideGeo.attributes.position; let n = 0;
+    const put = (v) => { a.setXYZ(n++, v.x, v.y, v.z); };
+    root.updateMatrixWorld(true);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {           // Mercury underside corners
+      put(tmp.set(sock.x + mW / 2 + sx * mW / 2, sock.seatY, sock.z + sz * mL / 2));
+      put(mercury.localToWorld(tmp.set(sx * mW / 2, -merT, sz * mL / 2)));
+    }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {           // PeriBoard underside corners
+      put(tmp.set(mount.x + sx * pW / 2, mount.y - ctx.BOARD_T, mount.z + sz * pD / 2));
+      put(peri.localToWorld(tmp.set(sx * pW / 2, -ctx.BOARD_T, sz * pD / 2)));
+    }
+    a.needsUpdate = true; guideGeo.computeBoundingSphere(); guides.computeLineDistances();
+    guides.visible = e > 0.02 || state.insertion < 0.98; guideMat.opacity = 0.8 * Math.max(e, state.insertion < 0.98 ? 0.6 : 0);
+  }
+
   const state = { insertion: 1, explode: 0 };
   const q = new THREE.Quaternion();
   function apply() {
@@ -47,11 +73,12 @@ export async function createUniJack({ baseUrl } = {}) {
     if (b > 0) merPivot.position.set(x0, y0 + e * EXPLODE_MERCURY_Y, sock.z);   // rotate-down phase pivots in place
     merPivot.rotation.set(0, 0, theta);
     periRig.position.set(mount.x + e * EXPLODE_PERI_X, mount.y + e * EXPLODE_PERI_Y, mount.z);
-    const closed = ease(clamp01((ins - 0.82) / 0.18));          // latches click shut at the very end
+    const closed = ease(clamp01((ins - 0.82) / 0.18)) * (1 - e);   // latches click shut at the very end, and spring open when the module is lifted out
     for (const l of latches) {
       q.setFromAxisAngle(l.axis, l.openAngle * (1 - closed));
       l.obj.quaternion.copy(l.obj.userData._q0).multiply(q);
     }
+    updateGuides(e);
   }
   apply();
 

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UniJack 3D model (illustrative)</title>
+<meta name="description" content="Rotatable, photo-anchored 3D model of the UniJack kit: base board, Mercury module and PeriBoard. Illustrative, not CAD.">
+<meta name="theme-color" content="#080b10">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="./src/viewer.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand"><span class="dot" aria-hidden="true"></span><span>UniJack</span><small>3D model &middot; illustrative</small></div>
+    <div class="top-actions">
+      <button class="chip" id="btn-labels" aria-pressed="false" title="Show the board designators printed on the PCBs">Labels</button>
+      <button class="chip" id="btn-rotate" aria-pressed="true" aria-label="Pause automatic rotation">Auto-rotate</button>
+      <button class="chip" id="btn-explode" aria-pressed="false" title="Separate the boards along their mating axis">Exploded view</button>
+      <button class="chip" id="btn-parts" aria-expanded="false" aria-controls="parts-panel">Parts</button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="c" tabindex="0" aria-label="Interactive 3D model of the UniJack kit. Drag or use the arrow keys to rotate, plus and minus to zoom."></canvas>
+    <div class="labels" id="labels" aria-hidden="true"></div>
+    <div class="loader" id="loader" role="status">Building model&hellip;</div>
+    <div class="fallback" id="fallback" hidden>
+      <img src="./assets/tex/base-top.webp" alt="Top-down photograph of the UniJack base board" width="1452" height="698">
+      <p>3D needs WebGL, which is unavailable in this browser. Showing the photograph the model is built from.</p>
+    </div>
+    <aside class="card" id="card" aria-live="polite" hidden></aside>
+    <aside class="panel" id="parts-panel" hidden>
+      <div class="panel-head"><input id="part-filter" type="search" placeholder="Filter parts (e.g. J303, RJ45)" aria-label="Filter parts"><button class="x" id="parts-close" aria-label="Close parts list">&times;</button></div>
+      <div class="panel-list" id="part-list"></div>
+    </aside>
+  </main>
+
+  <section class="dock" aria-label="Model controls">
+    <div class="row" role="group" aria-label="Camera views">
+      <button class="chip on" data-view="hero" aria-pressed="true">Hero</button>
+      <button class="chip" data-view="top" aria-pressed="false">Top</button>
+      <button class="chip" data-view="low" aria-pressed="false">Low</button>
+      <button class="chip" data-view="side" aria-pressed="false">Side</button>
+      <button class="chip" data-view="under" aria-pressed="false">Underside</button>
+    </div>
+    <div class="row" role="group" aria-label="Show parts">
+      <button class="chip on" data-show="base" aria-pressed="true">UniJack</button>
+      <button class="chip on" data-show="mercury" aria-pressed="true">Mercury</button>
+      <button class="chip on" data-show="peri" aria-pressed="true">PeriBoard</button>
+    </div>
+    <div class="row sliders">
+      <label class="sl"><span>Mercury insertion <output id="ins-out">Seated</output></span>
+        <input id="ins" type="range" min="0" max="100" value="100" aria-label="Mercury module insertion"></label>
+      <button class="chip" id="btn-play">Play insertion</button>
+      <label class="sl"><span>Explode <output id="exp-out">0%</output></span>
+        <input id="exp" type="range" min="0" max="100" value="0" aria-label="Explode the kit"></label>
+    </div>
+  </section>
+
+  <footer class="note">
+    Illustrative model built from TBench gallery photographs &mdash; <b>not CAD</b>. Board tops are the real photos; part heights, the PeriBoard stack height,
+    the PCB thickness and the insertion angle are <b>assumed</b>. Undersides of the base board and PeriBoard were not photographed and are shown plain.
+    <span class="legend"><i class="s ok"></i>photo-verified <i class="s der"></i>photo-derived <i class="s ass"></i>assumed</span>
+  </footer>
+</div>
+<noscript><p style="padding:2rem;color:#edf2f5">This viewer needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
