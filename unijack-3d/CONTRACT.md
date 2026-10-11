@@ -47,7 +47,14 @@ without moving any pixel coordinate.
   `top: mat.photoTop(ctx.tex.base)` (planar UV from the photo) and a solid `side` material from `ctx.mat`.
   The same texture is shared by all parts of a board; create `photoTop` once per builder and reuse it.
 * Parts on the BACK of a board (Mercury only): extrude them downward (`y0 = -thickness - h`), give them `bottom: mat.photoTop(ctx.tex.mercuryBack)` and `frame: ctx.frames.mercuryBack`; their bottom faces then get mirrored-x UVs automatically (a back photo is viewed from below).
-* Repeated small things (IC leads, header pins, contacts): `prim.instanced` / `prim.gullLeads` (one draw call).
+* Repeated small things (IC leads, header pins, contacts): `prim.instanced` / `prim.gullLeads` (one draw call). `gullLeads` builds a real
+  gull-wing (shoulder, knee, foot) with toe and heel solder fillets; `prim.UNIT_FOOT` (flat foot + toe fillet on its +x end) and
+  `prim.UNIT_PIN` (square pin, chamfered tip) are the unit geometries for instanced tails and pins.
+* Micro-geometry is ASSUMED detail (README honesty table): `prim.boxPart` bevels the edges of any free-standing box taller than 2 mm
+  (0.2 mm; 0.3 mm above 4 mm; thin shell plates get a half-round) and the merged-box helpers do the same on edges that no flush or
+  taller box of the same batch meets. Pass `sharp: true` for stamped steel and for pieces that abut others flush, `edges: { px, nx, pz, nz }`
+  to switch single top edges off where separate boxes meet, `bevel: c` to force a size. Fillets and bevels must not change a part's
+  bounding box where that box is used for fitting (the three mating connector pairs, `tools/collide.mjs`): keep them inside the old extent.
 * PCB body: `prim.boardSlab` (rectangle) or `prim.shapeBoard` (outline with notches and round holes, separate front/back photo).
 * Materials: `ctx.mat.*` (extend locally if needed; do not edit `src/lib/*`).
 * Group each physical part (housing + leads + pins) in a `THREE.Group`, add to the parent, and describe it with `prim.meta`.

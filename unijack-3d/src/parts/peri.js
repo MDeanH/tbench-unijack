@@ -61,10 +61,23 @@ export function build(ctx) {
     const add = (P, u, v) => [P[0] + u[0] + v[0], P[1] + u[1] + v[1]];
     return [add(A, n(A, B), n(A, D)), add(B, n(B, A), n(B, C)), add(C, n(C, D), n(C, B)), add(D, n(D, C), n(D, A))];
   };
+  // Boxes at least prim.EDGE_MIN_H tall (and not tapered) get a soft bevel on the top edges that no flush or taller box of the same
+  // batch meets (prim.freeEdges), so a housing assembled from several boxes keeps a continuous top. ASSUMED detail: the photos show
+  // softly rounded housing edges but no radius is measurable. A box may also be { fillet: { o: [x, z], ry, L, H, W } } = a concave
+  // tinned solder fillet (prim.filletTris) in the side material.
   function mergeBoxes(boxes, { uvFrame = null } = {}) {
     const side = { pos: [], nor: [] }, top = { pos: [], nor: [] };
+    const rectOf = (bx) => { const [A, B, D] = [bx.c[0], bx.c[1], bx.c[3]], W = Math.hypot(B[0] - A[0], B[1] - A[1]), Dd = Math.hypot(D[0] - A[0], D[1] - A[1]);
+      return { o: A, u: [(B[0] - A[0]) / W, (B[1] - A[1]) / W], v: [(D[0] - A[0]) / Dd, (D[1] - A[1]) / Dd], W, D: Dd, y0: bx.y0 ?? 0, y1: bx.y1 }; };
+    const rects = boxes.filter((bx) => !bx.fillet && !(bx.taper > 0)).map(rectOf);
     for (const bx of boxes) {
+      if (bx.fillet) { const F = bx.fillet; prim.appendTris(side, prim.placeTris(prim.filletTris(F.L, F.H, F.W, 2), [F.o[0], F.y0 ?? 0, F.o[1]], F.ry || 0)); continue; }
       const bot = bx.c, tp = bx.taper > 0 ? inset(bot, bx.taper) : bot, y0 = bx.y0 ?? 0, y1 = bx.y1;
+      if (!(bx.taper > 0) && !bx.sharp) {
+        const r = rectOf(bx), c = bx.bevel ?? prim.autoBevel(r.W, y1 - y0, r.D);
+        const bt = c > 0 ? prim.bevelBoxTris({ ...r, c, edges: prim.freeEdges(rects, rects.findIndex((q) => q.o === bx.c[0])), bottom: false }) : null;
+        if (bt) { prim.appendTris(side, bt.side); prim.appendTris(bx.photo ? top : side, bt.top); continue; }
+      }
       const b = (i) => [bot[i][0], y0, bot[i][1]], u = (i) => [tp[i][0], y1, tp[i][1]];
       quadTo(side, b(2), b(1), u(1), u(2));            // +x side
       quadTo(side, b(0), b(3), u(3), u(0));            // -x side
@@ -121,12 +134,16 @@ export function build(ctx) {
       const dir = Math.sign(row.tip - row.base) || 1, lenMM = Math.abs(row.tip - row.base) / F.s;
       const items = row.dark ? darkLeadItems : leadItems;
       const u0 = row.u0 ?? leads.u0, pitch = row.pitch ?? leads.pitch;
+      // feet are prim.UNIT_FOOT (flat foot + an assumed concave toe fillet on the unit's +x end): turn +x towards the lead tip
+      const phi = orient === 'h' ? (dir > 0 ? -Math.PI / 2 : Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
       for (let i = 0; i < leads.n; i++) {
         const u = u0 + i * pitch;
-        const [cx, cy] = mm(rot(...map(u, (row.base + row.tip) / 2)));
-        items.push({ p: [cx, T / 2, cy], s: orient === 'h' ? [LW, T, lenMM] : [lenMM, T, LW], ry });
+        // the foot box plus its fillet (unit x -0.5..0.9) spans exactly base..tip, so the connector's extent (used by the mating fit) is unchanged
+        const sx = lenMM / 1.4;
+        const [cx, cy] = mm(rot(...map(u, row.base + dir * 0.5 * sx * F.s)));
+        items.push({ p: [cx, T / 2, cy], s: [sx, T, LW], ry: ry + phi });
         const [rx, rz] = mm(rot(...map(u, row.base + dir * 0.06 * F.s)));
-        items.push({ p: [rx, RISER / 2, rz], s: orient === 'h' ? [LW, RISER, 0.1] : [0.1, RISER, LW], ry });
+        items.push({ p: [rx, RISER / 2, rz], s: [0.1, RISER, LW], ry: ry + phi });
       }
     }
     for (const row of contacts.rows) {
@@ -137,8 +154,8 @@ export function build(ctx) {
         contactItems.push({ p: [cx, H_FLOOR + contacts.h / 2, cy], s: orient === 'h' ? [0.2, contacts.h, 0.13] : [0.13, contacts.h, 0.2], ry });
       }
     }
-    prim.instanced(grp, prim.UNIT_BOX, footTin, leadItems, 'leads');
-    if (darkLeadItems.length) prim.instanced(grp, prim.UNIT_BOX, footDark, darkLeadItems, 'leads-dark');
+    prim.instanced(grp, prim.UNIT_FOOT, footTin, leadItems, 'leads');
+    if (darkLeadItems.length) prim.instanced(grp, prim.UNIT_FOOT, footDark, darkLeadItems, 'leads-dark');
     prim.instanced(grp, prim.UNIT_BOX, contactBronze, contactItems, 'contacts');
     prim.meta(grp, {
       ref, kind: 'connector', status: 'photo-verified',
@@ -239,6 +256,9 @@ export function build(ctx) {
     footBoxes.push({ c: rectMM(s * 1.55, z, 0.8, 0.3), y0: 0.7, y1: 0.88 });
     footBoxes.push({ c: rectMM(s * 1.78, z, 0.16, 0.3), y0: 0.0, y1: 0.88 });
     footBoxes.push({ c: rectMM(s * FOOT_X, z, 1.4, 0.6), y0: 0.0, y1: 0.14 });   // foot fills the photographed solder pad
+    // ASSUMED solder: concave toe fillet beyond the foot tip and a heel fillet climbing the leg (gallery-1 shows bright reflowed solder at every foot)
+    footBoxes.push({ fillet: { o: [s * (FOOT_X + 0.7), z], ry: s > 0 ? 0 : Math.PI, L: 0.3, H: 0.14, W: 0.7 } });
+    footBoxes.push({ fillet: { o: [s * 1.86, z], ry: s > 0 ? 0 : Math.PI, L: 0.3, H: 0.4, W: 0.7 } });
   }
   const bodyGeo = mergeBoxes(bodyBoxes), pinGeo = mergeBoxes(pinBoxes), footGeo = mergeBoxes(footBoxes);
 

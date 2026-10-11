@@ -6,40 +6,53 @@
 //   leadBoxes / leadRow  gull-wing lead rows (shoulder + riser + foot per lead) as photo-topped merged boxes:
 //                the lead TOPS show the real photo (so the top-down view equals the photo), the sides are metal
 //   flatPads     thin flat pads / terminations (merged, photo-topped)
-//   pinSet       vertical pins / contacts (instanced, solid colour)
+//   pinSet       vertical pins / contacts with chamfered tips (instanced, solid colour)
 //   ballGrid     instanced solder balls
 //   uniqueNames  give every generic sub-node (body, pins, leads, ...) a name that is unique on the board (GLB node names, parts list)
 
 /** A single extruded box from a pixel bbox (wrapper around prim.boxPart). */
-export function pxBoxPart(ctx, parent, b, h, { y0 = 0, top, side, radius = 0, name } = {}) {
+export function pxBoxPart(ctx, parent, b, h, { y0 = 0, top, side, radius = 0, name, ...rest } = {}) {
   const f = ctx.frames.base, bx = f.box(b);
-  return ctx.prim.boxPart(parent, { frame: f, size: [bx.w, h, bx.d], pos: [bx.cx, y0, bx.cz], top, side, radius, name });
+  return ctx.prim.boxPart(parent, { frame: f, size: [bx.w, h, bx.d], pos: [bx.cx, y0, bx.cz], top, side, radius, name, ...rest });   // rest: sharp, edges, bevel
 }
 
 /**
  * Many boxes of different heights merged into one mesh. Materials: [side, top]. Top faces get the planar photo UV
  * (same mapping as prim.boxPart), side faces carry the same UVs (the side material has no map, so they are ignored).
- * list = [{ b:[x0,y0,x1,y1] (px), h (mm), y0? (mm, default 0) }]
+ * list = [{ b:[x0,y0,x1,y1] (px), h (mm), y0? (mm, default 0), sharp?, bevel? }]  or  [{ fillet: { x, z (px), dir: '+x'|'-x'|'+y'|'-y' (texture axes), L, H (mm), W (px) } }]
+ * Boxes at least EDGE_MIN_H tall get a soft bevel on every top edge that no flush or taller box of the same list meets
+ * (prim.freeEdges), so a housing assembled from several boxes keeps a continuous top. Fillets are concave tinned coves (side material).
  */
 export function mergedBoxes(ctx, parent, list, { top, side, name = 'merged' }) {
-  const { THREE, frames } = ctx, f = frames.base;
+  const { THREE, frames, prim } = ctx, f = frames.base;
   const P = [], N = [], U = [], Is = [], It = [];
   let v = 0;
+  const uv = (x, z) => [(x + f.W / 2) / f.W, 1 - (z + f.D / 2) / f.D];
   const quad = (pts, n, idx) => {
     const b0 = v;
-    for (const p of pts) { P.push(p[0], p[1], p[2]); N.push(n[0], n[1], n[2]); U.push((p[0] + f.W / 2) / f.W, 1 - (p[2] + f.D / 2) / f.D); v++; }
+    for (const p of pts) { P.push(p[0], p[1], p[2]); N.push(n[0], n[1], n[2]); U.push(...uv(p[0], p[2])); v++; }
     idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
   };
-  for (const it of list) {
-    const b = f.box(it.b), x0 = b.cx - b.w / 2, x1 = b.cx + b.w / 2, z0 = b.cz - b.d / 2, z1 = b.cz + b.d / 2;
-    const y0 = it.y0 || 0, y1 = y0 + it.h;
+  const tris = (t, idx) => { for (let i = 0; i < t.pos.length; i += 3) { P.push(t.pos[i], t.pos[i + 1], t.pos[i + 2]); N.push(t.nor[i], t.nor[i + 1], t.nor[i + 2]); U.push(...uv(t.pos[i], t.pos[i + 2])); idx.push(v++); } };
+  const rects = list.map((it) => { if (it.fillet) return null; const b = f.box(it.b); return { o: [b.cx - b.w / 2, b.cz - b.d / 2], u: [1, 0], v: [0, 1], W: b.w, D: b.d, y0: it.y0 || 0, y1: (it.y0 || 0) + it.h }; });
+  const rectList = rects.filter(Boolean);
+  list.forEach((it, i) => {
+    if (it.fillet) {
+      const F = it.fillet, ry = { '+x': 0, '-x': Math.PI, '+y': -Math.PI / 2, '-y': Math.PI / 2 }[F.dir] ?? 0;
+      tris(prim.placeTris(prim.filletTris(F.L, F.H, f.len(F.W), 2), [f.x(F.x), F.y0 || 0, f.z(F.z)], ry), Is);
+      return;
+    }
+    const r = rects[i], x0 = r.o[0], x1 = x0 + r.W, z0 = r.o[1], z1 = z0 + r.D, y0 = r.y0, y1 = r.y1;
+    const c = it.sharp ? 0 : (it.bevel ?? prim.autoBevel(r.W, it.h, r.D));
+    const bt = c > 0 ? prim.bevelBoxTris({ ...r, c, edges: it.edges || prim.freeEdges(rectList, rectList.indexOf(r)), bottom: y0 > 0.02 }) : null;
+    if (bt) { tris(bt.side, Is); tris(bt.bottom, Is); tris(bt.top, It); return; }
     quad([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [0, 1, 0], It);
     quad([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], Is);
     quad([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [0, 0, -1], Is);
     quad([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [1, 0, 0], Is);
     quad([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0], Is);
     if (y0 > 0.02) quad([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0], Is);
-  }
+  });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
@@ -59,18 +72,27 @@ export function mergedBoxes(ctx, parent, list, { top, side, name = 'merged' }) {
  *  face = pixel coordinate of the body face the leads leave, tip = pixel coordinate of the lead tip,
  *  pos  = across-axis pixel centres, w = lead width in pixels, hTop = height of the shoulder top (mm).
  */
-export function leadBoxes({ axis, face, tip, pos, w = 3.5, t = 0.14, hTop = 0.5 }) {
+export function leadBoxes({ axis, face, tip, pos, w = 3.5, t = 0.14, hTop = 0.5, fillet = true }) {
   const out = [];
   const dir = Math.sign(tip - face), len = Math.abs(tip - face);
   const k = (fr) => face + dir * len * fr;
+  const PX_MM = 8.72;                                                            // base texture px per mm (fillet lengths are given in mm)
   for (const p of pos) {
     const seg = (a0, a1, yA, yB) => {
       const lo = Math.min(a0, a1), hi = Math.max(a0, a1);
-      out.push({ b: axis === 'x' ? [lo, p - w / 2, hi, p + w / 2] : [p - w / 2, lo, p + w / 2, hi], h: yB - yA, y0: yA });
+      out.push({ b: axis === 'x' ? [lo, p - w / 2, hi, p + w / 2] : [p - w / 2, lo, p + w / 2, hi], h: yB - yA, y0: yA, sharp: true });
     };
     seg(k(-0.08), k(0.42), hTop - t, hTop);        // shoulder, tucked into the body
     seg(k(0.30), k(0.42), 0, hTop - t - 0.005);   // riser (top kept below the shoulder underside: no coplanar faces)
-    seg(k(0.36), k(1.0), 0, t);                   // foot on the pad
+    const L = fillet ? Math.min(0.3, 0.25 * len / PX_MM) : 0, Lpx = L * PX_MM;
+    seg(k(0.36), k(1.0) - dir * Lpx, 0, t);       // foot on the pad (the toe fillet completes it to the tip, so the lead extent is unchanged)
+    if (fillet) {                                   // ASSUMED solder: concave toe fillet at the tip, heel fillet behind the riser
+      const out1 = dir > 0 ? (axis === 'x' ? '+x' : '+y') : (axis === 'x' ? '-x' : '-y'), back = dir > 0 ? (axis === 'x' ? '-x' : '-y') : (axis === 'x' ? '+x' : '+y');
+      const W = w * 1.3;
+      const at = (fr, off = 0) => (axis === 'x' ? { x: k(fr) - dir * off, z: p } : { x: p, z: k(fr) - dir * off });
+      out.push({ fillet: { ...at(1.0, Lpx), dir: out1, L, H: t, W } });
+      out.push({ fillet: { ...at(0.30), dir: back, L: L * 0.7, H: Math.min(hTop - t - 0.01, 0.35), W } });
+    }
   }
   return out;
 }
@@ -89,7 +111,7 @@ export function flatPads(ctx, parent, mats, list, name = 'pads') {
 export function pinSet(ctx, parent, mat, list, name = 'pins') {
   const f = ctx.frames.base;
   const items = list.map((p) => ({ p: [f.x(p.x), (p.y0 + p.y1) / 2, f.z(p.z)], s: [f.len(p.w), p.y1 - p.y0, f.len(p.d)] }));
-  return ctx.prim.instanced(parent, ctx.prim.UNIT_BOX, mat, items, name);
+  return ctx.prim.instanced(parent, ctx.prim.UNIT_PIN, mat, items, name);   // square pins with a chamfered tip (assumed; the photos show pointed tips)
 }
 
 /** Instanced solder balls. list = [{ x, z (px) }], d = ball diameter (mm), yc = ball centre height (mm). */
