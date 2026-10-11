@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createUniJack } from './model.js';
 import { makeStage } from './lib/stage.js';
+import { makePost } from './lib/post.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -10,6 +10,9 @@ const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 const appEl = $('#app'), canvas = $('#c'), stageEl = $('#stage');
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 const DEG = Math.PI / 180;
+// ?quality=low turns the post-processing chain off (plain renderer.render: no ambient occlusion, depth of field or SMAA); ?quality=high keeps AO and DOF on
+// regardless of the measured frame time. Otherwise AO and DOF are dropped once about 20 frames in a row exceed about 30 ms (adaptive quality).
+const QUALITY = new URLSearchParams(location.search).get('quality') || 'auto';
 
 // the full disclosure is open only on roomy screens; on phones and windows under 860 px high it starts collapsed (the short line and the summary stay visible) so the model keeps the space
 $('#about').open = !matchMedia('(max-width: 640px), (max-height: 860px)').matches;
@@ -30,6 +33,7 @@ async function start(renderer) {
   const stage = makeStage(renderer, { shadows: true });
   const scene = stage.scene;
   const camera = new THREE.PerspectiveCamera(32, 1, 1, 4000);
+  const post = QUALITY === 'low' ? null : makePost(renderer, scene, camera, { ao: true, dof: false, aa: true });
   const controls = new OrbitControls(camera, canvas);
   Object.assign(controls, { enableDamping: !reduce.matches, dampingFactor: 0.08, screenSpacePanning: true, minDistance: 30, maxDistance: 900, autoRotateSpeed: 0.7 });
   let needs = true, kit = null, currentView = 'hero', tween = null;
@@ -40,7 +44,7 @@ async function start(renderer) {
   const resize = () => {
     const w = stageEl.clientWidth, h = stageEl.clientHeight; if (!w || !h) return;
     appEl.style.setProperty('--stage-h', h + 'px');
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); needs = true;
+    renderer.setSize(w, h, false); if (post) post.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); needs = true;
     if (kit && currentView && !tween) applyView(currentView, true);   // keep a preset view fitted when the window or phone orientation changes
   };
   new ResizeObserver(resize).observe(stageEl); resize();
@@ -52,6 +56,13 @@ async function start(renderer) {
   const bbox = new THREE.Box3().setFromObject(kit.root);
   const center = bbox.getCenter(new THREE.Vector3());
   const radius = bbox.getSize(new THREE.Vector3()).length() / 2;
+  // the key's shadow camera hugs the kit (4k map spent on the boards); refitted whenever the pose changes (explode / insertion move the boards)
+  const shadowBox = new THREE.Box3(); let shadowPose = null;
+  function fitShadowToKit() {
+    const key = kit.state.insertion + ':' + kit.state.explode; if (key === shadowPose) return; shadowPose = key;
+    kit.root.updateMatrixWorld(true); shadowBox.setFromObject(kit.root); stage.fitShadow(shadowBox);
+  }
+  fitShadowToKit();
 
   const boardOf = (o) => { for (let n = o; n; n = n.parent) { if (n === kit.base) return 'base'; if (n === kit.mercury) return 'mercury'; if (n === kit.peri) return 'peri'; } return 'base'; };
   const visibleDeep = (o) => { while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -525,10 +536,24 @@ async function start(renderer) {
   // ---------- WebGL context loss: say so, rebuild the environment light (its render target is lost), repaint ----------
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); $('#gl-notice').hidden = false; });
   canvas.addEventListener('webglcontextrestored', () => {
-    const pm = new THREE.PMREMGenerator(renderer), env = pm.fromScene(new RoomEnvironment(), 0.03);   // same call as lib/stage.js
-    scene.environment = env.texture; stage.env = env; pm.dispose();   // the old target is not disposed: its GL objects died with the context, and deleting them logs INVALID_OPERATION warnings
+    stage.rebuildEnvironment();   // the old target is not disposed: its GL objects died with the context, and deleting them logs INVALID_OPERATION warnings
     $('#gl-notice').hidden = true; needs = true;
   });
+
+  // ---------- quality: adaptive AO / DOF, depth of field only in the Hero preset while nothing moves ----------
+  const perf = { slow: 0, dropped: false, lastRendered: 0, samples: 0 };
+  let pointerActive = false;
+  canvas.addEventListener('pointerdown', () => { pointerActive = true; }); window.addEventListener('pointerup', () => { pointerActive = false; needs = true; }); window.addEventListener('pointercancel', () => { pointerActive = false; needs = true; });
+  function updateQuality(now, animating) {
+    if (!post) return;
+    // frame time is measured only across consecutive rendered frames (the loop renders on demand), i.e. while something animates
+    if (animating && perf.lastRendered) { const dt = now - perf.lastRendered; perf.samples++; if (dt > 30) perf.slow++; else perf.slow = Math.max(0, perf.slow - 1); }
+    perf.lastRendered = now;
+    if (!perf.dropped && QUALITY !== 'high' && perf.slow >= 20) { perf.dropped = true; post.set({ ao: false, dof: false }); console.info('unijack: slow frames, ambient occlusion and depth of field switched off'); }
+    const dof = !perf.dropped && currentView === 'hero' && !tween && !pointerActive && !play && !expAnim;
+    if (post.state.dof !== dof) post.set({ dof });
+    if (dof) post.focusAt(center);
+  }
 
   // ---------- loop (renders only when something changed) ----------
   let firstFrame = true;
@@ -538,9 +563,11 @@ async function start(renderer) {
     const camMoved = controls.update();
     if (!(camMoved || moving || needs)) return;
     if (helper && sel) { selBox.setFromObject(sel); helper.visible = visibleDeep(sel); }
-    renderer.render(scene, camera); updateLabels(now); needs = false;
+    fitShadowToKit(); updateQuality(now, !!(camMoved || moving));
+    if (post) post.render(); else renderer.render(scene, camera);
+    updateLabels(now); needs = false;
     if (firstFrame) { firstFrame = false; const l = $('#loader'); l.classList.add('done'); setTimeout(() => { l.hidden = true; }, 500); window.__viewerReady = true; }
   }
   requestAnimationFrame(loop);
-  window.__unijack = { kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE, frameFor, boardPoints, dirFromAzEl, VIEWS, busy: () => !!(tween || expAnim || play) };
+  window.__unijack = { kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE, frameFor, boardPoints, dirFromAzEl, VIEWS, stage, post, perf, quality: QUALITY, busy: () => !!(tween || expAnim || play) };
 }

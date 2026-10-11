@@ -44,6 +44,7 @@ from any other angle.
 | Texture patch under the socket latches | **synthetic**. The flat-lay photo has the closed latch arms baked in; while the latches are open a small patch cloned from a plain region of the board covers those pixels. It is hidden whenever the latches are closed. |
 | Surface finish (glossy solder mask, matte silkscreen, metallic pads, shields and gold, matte IC bodies) | **photo-derived by colour segmentation**, not measured. `tools/derive-maps.py` classifies every texture pixel by hue / saturation / value (PIL HSV 0..255: mask = S above 70..110 and hue 112..175; silkscreen = S below 45..100 and V above 178..205; tin = low S with V between; dark = low S and V below 75..105; gold = hue 4..50 and S above 55..95) and writes roughness / metalness maps (mask 0.45 dielectric, silk 0.78, tin 0.32 metallic, dark 0.62, gold 0.30 metallic on Mercury and a hedged 0.40 / half-metal on the base and PeriBoard, where tan connector plastic is colour-identical to gold plating) plus a mild normal map (silkscreen proud, pads below the mask). Class fractions and thresholds per texture: `assets/tex/derived/README.md`. Limits: a white pixel is treated as silkscreen whether it is silkscreen or white plastic, a grey pixel as metal whether it is a pad or a grey part, and laser markings on IC tops get the silkscreen relief. Metal pixels use the photo's own colour times 1.5 as their specular colour (**assumed**: the photographed grey of a pad is its reflection of the photographer's softbox, not its reflectance; the viewer's gain is a diffuse calibration and is not applied to metals; the GLB carries the plain photo colour). A "delight" pass that flattens the photos' large-scale luminance was measured and rejected: in these evenly lit flat lays that variation is the copper under the mask, not the lighting. |
 | Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97; re-checked at 0.97 with the surface-finish maps, `tools/colorcal.py`). Hue and highlights are approximate. The solder mask reflects the environment at a quarter strength (`PHOTO_ENV`), because the room environment has a lamp at the zenith that a glossy mask mirrors in the top view and the photos' lights were off-axis; metals reflect it fully. (In three r186 `material.envMapIntensity` is overwritten by `scene.environmentIntensity`, so this is done per pixel in the shader.) |
+| Studio, ground and post-processing | **Synthetic rendering choices, not the photo's set-up.** The light is a procedural studio map (`src/lib/stage.js`: a large warm key box above-front-left, a cool fill, a cool rim strip, a graded room) rendered through PMREMGenerator, plus one warm shadow-casting directional key (4096 px map fitted to the kit, 5-tap PCF, soft) and a weak cool rim. The key's direction follows gallery-1.jpg (header shadows fall to the lower right); its softness and colour temperature are judged by eye against that photo, not measured. The dark satin table and the graded dark backdrop are inventions: the gallery photos were shot on a white sweep. The table reflects only the studio map, not the board. Post-processing (`src/lib/post.js`): GTAO ambient occlusion (3.5 mm radius, contact darkening under connectors and the module), SMAA, and in the Hero preset a subtle depth of field while nothing moves; tone mapping and sRGB happen in the OutputPass. AO and DOF switch off after about 20 slow frames (over 30 ms) and with `?quality=low`; `?quality=high` keeps them. With the studio map the mean solder-mask colour of the Hero render stays within about 4 percent of the previous rig (`tools/qa-render.mjs`, mask boxes documented in qa-out notes). |
 | Undersides of the base board and PeriBoard | **not photographed**, shown plain. Mercury's back is photographed and shown. |
 | Function of any part | inferred from shape only ("appears to be ...") |
 
@@ -56,7 +57,7 @@ the part builders with geometry converted from that data and keep the same metad
 index.html, src/main.js, src/viewer.css   the viewer
 src/model.js                              assembles the kit; insertion, latches, explode, guides
 src/parts/base.js (+ base-left.js, base-right.js), peri.js, mercury.js   the part builders
-src/lib/                                  frame + planar UV, materials, primitives, stage lighting
+src/lib/                                  frame + planar UV, materials, primitives, stage lighting (studio map, shadow fit, ground), post-processing chain
 assets/tex/*.webp                         rectified, mm-scaled photo textures (derived from the gallery photos)
 assets/tex/derived/*.webp, README.md      roughness/metalness (-rm) and normal (-nrm) maps segmented from the textures by colour, with the thresholds and class fractions
 data/scale.json                           scale anchors and board sizes
@@ -73,6 +74,8 @@ CONTRACT.md                               rules for part builders
 ```
 npm install                                   # playwright-core, three (dev)
 node tools/qa-render.mjs --only=all --suite   # standard QA views into qa-out/
+#   oblique photo renders go through the same post chain as the viewer (GTAO + SMAA + OutputPass); --post=0 for a plain render,
+#   --dof=1 for the Hero depth of field, --env=room for the previous RoomEnvironment rig, --shadow=vsm to compare shadow filters
 node tools/viewer-shots.mjs                   # drive the UI, save screenshots, report errors
 node tools/export-glb.mjs                     # write assets/unijack.glb (carries the derived roughness/metalness and normal maps)
 python3 tools/derive-maps.py                  # regenerate assets/tex/derived after the textures change (python with pillow, numpy, scipy)
@@ -91,7 +94,8 @@ The viewer is marked `noindex` while it is a work in progress.
 ## Known limits
 
 * Tiny passives (0402 and smaller) are texture-only; larger parts have real geometry.
-* Real-time lighting cannot reproduce macro depth of field or the cinematic look of an offline render. This is a viewer, not the
+* Real-time lighting cannot reproduce the full macro depth of field or the cinematic look of an offline render (the Hero preset's depth of field is a screen-space approximation). This is a viewer, not the
   promotional film; the film should be rendered offline from real CAD or from this GLB.
 * Tall parts at the photo edge (RJ45, USB-A, barrel jack, terminal, mini- and micro-USB) show some of their own side faces in their top-face pixels (the flat lay is a perspective photo); their PCB-level footprints are displaced by a fraction of a millimetre.
+* The satin table is a disc that fades out 200 to 520 mm from the kit; at camera elevations under about 10 degrees (Side preset) its grazing-angle sheen is lighter than the backdrop behind it, so a soft horizon line shows. Post-processing (AO, SMAA, DOF) roughly doubles the frame cost; the adaptive quality drops AO and DOF on slow machines, and `?quality=low` turns the whole chain off.
 * Not yet tested on a real GPU, in Safari or on iOS.
