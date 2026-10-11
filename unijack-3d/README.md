@@ -42,6 +42,7 @@ from any other angle.
 | Insertion angle (28 degrees), slide distance, latch travel, explode distances | **assumed** and illustrative (take them from Jens's insertion video) |
 | Texture patch under the socket latches | **synthetic**. The flat-lay photo has the closed latch arms baked in; while the latches are open a small patch cloned from a plain region of the board covers those pixels. It is hidden whenever the latches are closed. |
 | Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97). Hue and highlights are approximate. |
+| Studio, ground and post-processing | **Synthetic rendering choices, not the photo's set-up.** The light is a procedural studio map (`src/lib/stage.js`: a large warm key box above-front-left, a cool fill, a cool rim strip, a graded room) rendered through PMREMGenerator, plus one warm shadow-casting directional key (4096 px map fitted to the kit, 5-tap PCF, soft) and a weak cool rim. The key's direction follows gallery-1.jpg (header shadows fall to the lower right); its softness and colour temperature are judged by eye against that photo, not measured. The dark satin table and the graded dark backdrop are inventions: the gallery photos were shot on a white sweep. The table reflects only the studio map, not the board. Post-processing (`src/lib/post.js`): GTAO ambient occlusion (3.5 mm radius, contact darkening under connectors and the module), SMAA, and in the Hero preset a subtle depth of field while nothing moves; tone mapping and sRGB happen in the OutputPass. AO and DOF switch off after about 20 slow frames (over 30 ms) and with `?quality=low`; `?quality=high` keeps them. With the studio map the mean solder-mask colour of the Hero render stays within about 4 percent of the previous rig (`tools/qa-render.mjs`, mask boxes documented in qa-out notes). |
 | Undersides of the base board and PeriBoard | **not photographed**, shown plain. Mercury's back is photographed and shown. |
 | Function of any part | inferred from shape only ("appears to be ...") |
 
@@ -54,7 +55,7 @@ the part builders with geometry converted from that data and keep the same metad
 index.html, src/main.js, src/viewer.css   the viewer
 src/model.js                              assembles the kit; insertion, latches, explode, guides
 src/parts/base.js (+ base-left.js, base-right.js), peri.js, mercury.js   the part builders
-src/lib/                                  frame + planar UV, materials, primitives, stage lighting
+src/lib/                                  frame + planar UV, materials, primitives, stage lighting (studio map, shadow fit, ground), post-processing chain
 assets/tex/*.webp                         rectified, mm-scaled photo textures (derived from the gallery photos)
 data/scale.json                           scale anchors and board sizes
 tools/extract.py                          photos -> textures + scale.json   (needs source-photos/, pillow numpy scipy)
@@ -69,6 +70,8 @@ CONTRACT.md                               rules for part builders
 ```
 npm install                                   # playwright-core, three (dev)
 node tools/qa-render.mjs --only=all --suite   # standard QA views into qa-out/
+#   oblique photo renders go through the same post chain as the viewer (GTAO + SMAA + OutputPass); --post=0 for a plain render,
+#   --dof=1 for the Hero depth of field, --env=room for the previous RoomEnvironment rig, --shadow=vsm to compare shadow filters
 node tools/viewer-shots.mjs                   # drive the UI, save screenshots, report errors
 node tools/export-glb.mjs                     # write assets/unijack.glb
 ```
@@ -85,7 +88,8 @@ The viewer is marked `noindex` while it is a work in progress.
 ## Known limits
 
 * Tiny passives (0402 and smaller) are texture-only; larger parts have real geometry.
-* Real-time lighting cannot reproduce macro depth of field or the cinematic look of an offline render. This is a viewer, not the
+* Real-time lighting cannot reproduce the full macro depth of field or the cinematic look of an offline render (the Hero preset's depth of field is a screen-space approximation). This is a viewer, not the
   promotional film; the film should be rendered offline from real CAD or from this GLB.
 * Tall parts at the photo edge (RJ45, USB-A, barrel jack, terminal, mini- and micro-USB) show some of their own side faces in their top-face pixels (the flat lay is a perspective photo); their PCB-level footprints are displaced by a fraction of a millimetre.
+* The satin table is a disc that fades out 200 to 520 mm from the kit; at camera elevations under about 10 degrees (Side preset) its grazing-angle sheen is lighter than the backdrop behind it, so a soft horizon line shows. Post-processing (AO, SMAA, DOF) roughly doubles the frame cost; the adaptive quality drops AO and DOF on slow machines, and `?quality=low` turns the whole chain off.
 * Not yet tested on a real GPU, in Safari or on iOS.

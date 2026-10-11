@@ -2,9 +2,12 @@
 //   only=all|base|peri|mercury   view=top|bottom|oblique|custom   mode=photo|footprint|clay
 //   az, el (degrees, oblique)    ins, exp (0..1 model state)       w, h (px; top/bottom default to the texture size)
 //   cam=x,y,z,tx,ty,tz (custom)  fov
+//   post=0|1 (EffectComposer: GTAO + SMAA + OutputPass; default ON for oblique/custom photo renders, OFF for top/bottom/footprint/clay)
+//   dof=1 (depth of field, needs post)   env=studio|room   shadow=pcf|vsm   ao=0 (post without AO)
 import * as THREE from 'three';
 import { createUniJack } from './model.js';
 import { makeStage } from './lib/stage.js';
+import { makePost } from './lib/post.js';
 
 const q = new URLSearchParams(location.search);
 const only = q.get('only') || 'all', view = q.get('view') || 'oblique', mode = q.get('mode') || 'photo';
@@ -30,7 +33,8 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
     const footprint = mode === 'footprint';
-    const stage = makeStage(renderer, { shadows: !footprint });
+    const stage = makeStage(renderer, { shadows: !footprint, env: q.get('env') || 'studio', shadowType: q.get('shadow') || 'pcf' });
+    const wantPost = q.has('post') ? q.get('post') === '1' : (mode === 'photo' && (view === 'oblique' || view === 'custom'));
     kit.setVisible({ base: only === 'all' || only === 'base', peri: only === 'all' || only === 'peri', mercury: only === 'all' || only === 'mercury' });
     kit.setInsertion(num('ins', 1)); kit.setExplode(num('exp', 0));
     for (const n of (q.get('hide') || '').split(',').filter(Boolean)) { const o = kit.root.getObjectByName(n); if (o) o.visible = false; else console.warn('hide: no object named', n); }
@@ -39,7 +43,7 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
 
     if (footprint) {
       renderer.toneMapping = THREE.NoToneMapping; stage.scene.background = new THREE.Color(0x000000);
-      stage.scene.environment = null; stage.ground.visible = false;
+      stage.scene.environment = null; stage.ground.visible = false; if (stage.backdrop) stage.backdrop.visible = false; stage.scene.fog = null;
       stage.scene.traverse((o) => {
         if (!(o.isMesh || o.isInstancedMesh)) return;
         let k = null, n = o; while (n && !k) { k = n.userData?.kind; n = n.parent; }
@@ -47,7 +51,7 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
         o.material = new THREE.MeshBasicMaterial({ color: col });
       });
     } else if (mode === 'clay') {
-      stage.scene.traverse((o) => { if ((o.isMesh || o.isInstancedMesh) && o.name !== 'ground') o.material = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, roughness: 0.7 }); });
+      stage.scene.traverse((o) => { if ((o.isMesh || o.isInstancedMesh) && o.name !== 'ground' && o.name !== 'backdrop') o.material = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, roughness: 0.7 }); });
     }
 
     // camera
@@ -77,7 +81,12 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
         cam.lookAt(ctr);
       }
     }
-    renderer.render(stage.scene, cam); renderer.render(stage.scene, cam);
+    if (q.get('fit') !== '0') stage.fitShadow(box);
+    const post = wantPost ? makePost(renderer, stage.scene, cam, { ao: q.get('ao') !== '0', dof: q.get('dof') === '1', aa: true }) : null;
+    if (post) post.focusAt(ctr); window.__post = post;
+    renderer.info.autoReset = false;   // count the whole frame (shadow pass + every post pass), not just the last renderer.render()
+    const draw = () => { renderer.info.reset(); if (post) post.render(); else renderer.render(stage.scene, cam); };
+    draw(); const t0 = performance.now(); draw(); const frameMs = performance.now() - t0;
 
     let meshes = 0, tris = 0;
     kit.root.traverseVisible((o) => {
@@ -85,7 +94,8 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
       const g = o.geometry, n = (g.index ? g.index.count : g.attributes.position.count) / 3;
       tris += n * (o.isInstancedMesh ? o.count : 1);
     });
-    window.__stats = { meshes, triangles: Math.round(tris), canvas: [W, H], drawCalls: renderer.info.render.calls };
+    window.__stats = { meshes, triangles: Math.round(tris), canvas: [W, H], drawCalls: renderer.info.render.calls, post: post ? post.state : null, passes: post ? post.passCount : 0, frameMs: Math.round(frameMs) };
+    window.__stage = stage; window.__kit = kit; window.__cam = cam; window.__renderer = renderer;
     window.__ready = true;
   } catch (e) { console.error(e); window.__error = String(e && e.stack || e); }
 })();

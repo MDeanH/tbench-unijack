@@ -2,7 +2,7 @@
 // Headless QA renderer (software WebGL via SwiftShader; no GPU needed).
 //   node tools/qa-render.mjs --only=base --view=top --mode=footprint --out=qa-out/base-fp.png
 //   node tools/qa-render.mjs --only=base --suite          # standard set of views into qa-out/
-// Options mirror src/qa.js: only, view, mode, az, el, ins, exp, w, h, cam, fov.
+// Options mirror src/qa.js: only, view, mode, az, el, ins, exp, w, h, cam, fov, post, dof, ao, env, shadow.
 import { chromium } from 'playwright-core';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -45,7 +45,8 @@ async function shot(params, out) {
   await page.locator('canvas').screenshot({ path: out });
   const stats = await page.evaluate(() => window.__stats);
   await page.close();
-  console.log(`${out}  meshes=${stats.meshes} tris=${stats.triangles} calls=${stats.drawCalls} ${stats.canvas.join('x')}${errs.length ? '  CONSOLE ERRORS: ' + errs.slice(0, 3).join(' | ') : ''}`);
+  const post = stats.post ? ` post=${Object.entries(stats.post).filter(([, v]) => v).map(([k]) => k).join('+') || 'none'} passes=${stats.passes}` : ' post=off';
+  console.log(`${out}  meshes=${stats.meshes} tris=${stats.triangles} calls=${stats.drawCalls}${post} frameMs=${stats.frameMs} ${stats.canvas.join('x')}${errs.length ? '  CONSOLE ERRORS: ' + errs.slice(0, 3).join(' | ') : ''}`);
   return stats;
 }
 
