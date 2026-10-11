@@ -42,7 +42,8 @@ from any other angle.
 | PCB thickness (1.6 mm base and PeriBoard, about 1.2 mm Mercury) | **assumed** |
 | Insertion angle (28 degrees), slide distance, latch travel, explode distances | **assumed** and illustrative (take them from Jens's insertion video) |
 | Texture patch under the socket latches | **synthetic**. The flat-lay photo has the closed latch arms baked in; while the latches are open a small patch cloned from a plain region of the board covers those pixels. It is hidden whenever the latches are closed. |
-| Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97). Hue and highlights are approximate. |
+| Surface finish (glossy solder mask, matte silkscreen, metallic pads, shields and gold, matte IC bodies) | **photo-derived by colour segmentation**, not measured. `tools/derive-maps.py` classifies every texture pixel by hue / saturation / value (PIL HSV 0..255: mask = S above 70..110 and hue 112..175; silkscreen = S below 45..100 and V above 178..205; tin = low S with V between; dark = low S and V below 75..105; gold = hue 4..50 and S above 55..95) and writes roughness / metalness maps (mask 0.45 dielectric, silk 0.78, tin 0.32 metallic, dark 0.62, gold 0.30 metallic on Mercury and a hedged 0.40 / half-metal on the base and PeriBoard, where tan connector plastic is colour-identical to gold plating) plus a mild normal map (silkscreen proud, pads below the mask). Class fractions and thresholds per texture: `assets/tex/derived/README.md`. Limits: a white pixel is treated as silkscreen whether it is silkscreen or white plastic, a grey pixel as metal whether it is a pad or a grey part, and laser markings on IC tops get the silkscreen relief. Metal pixels use the photo's own colour times 1.5 as their specular colour (**assumed**: the photographed grey of a pad is its reflection of the photographer's softbox, not its reflectance; the viewer's gain is a diffuse calibration and is not applied to metals; the GLB carries the plain photo colour). A "delight" pass that flattens the photos' large-scale luminance was measured and rejected: in these evenly lit flat lays that variation is the copper under the mask, not the lighting. |
+| Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97; re-checked at 0.97 with the surface-finish maps, `tools/colorcal.py`). Hue and highlights are approximate. The solder mask reflects the environment at a quarter strength (`PHOTO_ENV`), because the room environment has a lamp at the zenith that a glossy mask mirrors in the top view and the photos' lights were off-axis; metals reflect it fully. (In three r186 `material.envMapIntensity` is overwritten by `scene.environmentIntensity`, so this is done per pixel in the shader.) |
 | Undersides of the base board and PeriBoard | **not photographed**, shown plain. Mercury's back is photographed and shown. |
 | Function of any part | inferred from shape only ("appears to be ...") |
 
@@ -57,8 +58,10 @@ src/model.js                              assembles the kit; insertion, latches,
 src/parts/base.js (+ base-left.js, base-right.js), peri.js, mercury.js   the part builders
 src/lib/                                  frame + planar UV, materials, primitives, stage lighting
 assets/tex/*.webp                         rectified, mm-scaled photo textures (derived from the gallery photos)
+assets/tex/derived/*.webp, README.md      roughness/metalness (-rm) and normal (-nrm) maps segmented from the textures by colour, with the thresholds and class fractions
 data/scale.json                           scale anchors and board sizes
 tools/extract.py                          photos -> textures + scale.json   (needs source-photos/, pillow numpy scipy)
+tools/derive-maps.py                      textures -> assets/tex/derived (surface-finish maps by colour segmentation; needs pillow numpy scipy)
 tools/qa-render.mjs, overlay.py, crop.py  headless QA renders, footprint-vs-photo overlay, zoom-with-grid
 tools/viewer-shots.mjs                    end-to-end viewer test (clicks the UI, screenshots, console errors)
 tools/export-glb.mjs                      exports assets/unijack.glb (named nodes, metadata in glTF extras)
@@ -71,7 +74,9 @@ CONTRACT.md                               rules for part builders
 npm install                                   # playwright-core, three (dev)
 node tools/qa-render.mjs --only=all --suite   # standard QA views into qa-out/
 node tools/viewer-shots.mjs                   # drive the UI, save screenshots, report errors
-node tools/export-glb.mjs                     # write assets/unijack.glb
+node tools/export-glb.mjs                     # write assets/unijack.glb (carries the derived roughness/metalness and normal maps)
+python3 tools/derive-maps.py                  # regenerate assets/tex/derived after the textures change (python with pillow, numpy, scipy)
+python3 tools/colorcal.py qa-out/x/top.png    # photo-vs-render luminance check of a `--only=base --view=top --mode=photo` render
 ```
 
 The QA tools render with software WebGL (SwiftShader) so they run without a GPU, in a container or CI.

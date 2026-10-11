@@ -33,6 +33,9 @@ const assets = {
   'assets/tex/mercury-front.webp': uri('assets/tex/mercury-front.webp'),
   'assets/tex/mercury-back.webp': uri('assets/tex/mercury-back.webp'),
 };
+// derived surface-finish maps (tools/derive-maps.py); optional: a missing file just leaves that face uniformly matte
+for (const f of ['base-top-rm', 'base-top-nrm', 'peri-top-rm', 'peri-top-nrm', 'mercury-front-rm', 'mercury-front-nrm', 'mercury-back-rm'])
+  if (fs.existsSync(path.join(ROOT, `assets/tex/derived/${f}.webp`))) assets[`assets/tex/derived/${f}.webp`] = uri(`assets/tex/derived/${f}.webp`);
 
 const index = rd('index.html').toString();
 const a = index.indexOf('<div class="app"'), z = index.indexOf('<script type="module"');

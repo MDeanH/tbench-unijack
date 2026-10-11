@@ -19,7 +19,9 @@ const NOTE = 'Illustrative, photo-anchored model of the UniJack kit. NOT CAD. Un
   + 'Undersides of the base board and PeriBoard were not photographed.';
 const LIGHTING_NOTE = 'Photo textures are exported at neutral albedo (base colour factor 1.0). The UniJack viewer relights the photographs and its '
   + 'colours were matched to the photos by mean luminance only (hue and highlights are approximate); other renderers should light the photo '
-  + 'textures accordingly. The photographs already contain their own lighting and highlights. This file carries no lights.';
+  + 'textures accordingly. The photographs already contain their own lighting and highlights. This file carries no lights. '
+  + 'The metallic-roughness and normal textures of the photo materials are PHOTO-DERIVED by colour segmentation of the photographs (teal = solder mask, '
+  + 'white = silkscreen, grey = tin, black = IC body, tan = gold), not measured; metal pixels use the photo colour as their specular colour.';
 const COPYRIGHT = 'Illustrative model, NOT CAD. Photo textures are derived from the TBench / Crowd Supply gallery photographs; '
   + 'permission to redistribute them has not been confirmed.';
 const STATUS_KEY = {
@@ -118,7 +120,12 @@ function nameNodes(kit) {
 
     // ---- textures and materials ----
     const texNames = new Map([[kit.ctx.tex.base, 'base-top'], [kit.ctx.tex.peri, 'peri-top'], [kit.ctx.tex.mercuryFront, 'mercury-front'], [kit.ctx.tex.mercuryBack, 'mercury-back']]);
-    for (const [t, n] of texNames) { t.name = n; t.userData.mimeType = 'image/jpeg'; }   // JPEG keeps the GLB small
+    for (const [t, n] of texNames) {
+      t.name = n; t.userData.mimeType = 'image/jpeg';   // JPEG keeps the GLB small
+      const d = t.userData.derived || {};                // derived finish maps ride along as metallicRoughness / normal textures
+      if (d.rm) { d.rm.name = n + '-rm'; d.rm.userData.mimeType = 'image/jpeg'; }
+      if (d.nrm) { d.nrm.name = n + '-nrm'; d.nrm.userData.mimeType = 'image/jpeg'; }
+    }
     const libNames = new Map(Object.entries(kit.ctx.mat).filter(([, v]) => v && v.isMaterial).map(([k, v]) => [v, k]));
     const allMats = new Set(); kit.root.traverse((o) => { for (const m of [].concat(o.material || [])) allMats.add(m); });
     report.materialsBefore = allMats.size;
