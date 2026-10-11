@@ -200,7 +200,7 @@ export async function build(ctx, group) {
   {
     const g = mk({ label: 'Large leadless IC', kind: 'ic', status: 'photo-derived',
       desc: 'Large square package with no leads visible (appears to be a BGA or leadless style); marking only partly legible, function not claimed. Height and stand-off assumed.' });
-    pxBoxPart(ctx, g, [1254, 422, 1342, 496], 0.22, { top: undefined, side: M.ballField, name: 'ball-field' });
+    pxBoxPart(ctx, g, [1254, 422, 1342, 496], 0.22, { top: undefined, side: M.ballField, name: 'ball-field', sharp: true });
     pxBoxPart(ctx, g, [1251, 419, 1345, 499], 0.95, { y0: 0.22, top, side: mat.icGrey, radius: 0.12, name: 'body' });
   }
   {
@@ -237,7 +237,12 @@ export async function build(ctx, group) {
       { b: [x0 + wall, y0, x1 - wall, y0 + 3], h: 3.4 }, { b: [x0 + wall, y1 - 3, x1 - wall, y1], h: 3.4 },
     ], { top, side: mat.plasticBlack, name: 'shroud' });
     pinSet(ctx, g, mat.gold, colX.flatMap((x) => pinY.map((z) => ({ x, z, y0: 0.6, y1: 4.6, w: 2.6, d: 2.6 }))), 'pins');
-    flatPads(ctx, g, LM, tails.map((y) => ({ b: [body[0] - (tails.leadLen || 15), y - 2, body[0] + 4, y + 2], h: 0.12 })), 'tails');
+    const tl = tails.leadLen || 15;
+    mergedBoxes(ctx, g, tails.flatMap((y) => [
+      { b: [body[0] - tl, y - 2, body[0] + 4, y + 2], h: 0.12, sharp: true },
+      { fillet: { x: body[0] - tl, z: y, dir: '-x', L: 0.3, H: 0.12, W: 5.2 } },                 // assumed toe fillet at the tail tip
+      { fillet: { x: body[0] - 1, z: y, dir: '-x', L: 0.3, H: 0.4, W: 5.2 } },                  // and a heel fillet against the shroud wall
+    ]), { ...LM, name: 'tails' });
     return g;
   }
   const tails = (ys, len) => { const a = ys.slice(); a.leadLen = len; return a; };

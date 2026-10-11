@@ -121,24 +121,14 @@ export function build(ctx) {
 
   // ---------------------------------------------------------------- shared part helpers
   /** box on the FRONT face from a front-px box; top shows the photo */
-  function fbox(parent, pxBox, h, { y0 = 0, top = photoF, side, radius = 0 } = {}) {
+  function fbox(parent, pxBox, h, { y0 = 0, top = photoF, side, radius = 0, ...rest } = {}) {
     const b = f.box(pxBox);
-    return prim.boxPart(parent, { frame: f, size: [b.w, h, b.d], pos: [b.cx, y0, b.cz], radius, top, side });
+    return prim.boxPart(parent, { frame: f, size: [b.w, h, b.d], pos: [b.cx, y0, b.cz], radius, top, side, ...rest });   // rest: sharp, edges, bevel
   }
-  /** gull-wing leads (shoulder + riser + foot, 3 instances per lead) leaving a body along +-x or +-z.
+  /** gull-wing leads leaving a body along +-x or +-z: prim.gullLeads (real gull-wing profile with assumed toe and heel solder fillets, one draw call).
    *  ext = body half extent along the lead axis; positions = offsets across the body from (cx, cz). Part frame: y = 0 is the board surface. */
   function gull(parent, material, { cx, cz, ext, axis, sides, positions, len, w, t, hMid, name }) {
-    const items = [];
-    for (const sg of sides) for (const off of positions) {
-      const push = (u0, u1, ya, yb) => {
-        const uc = sg * (u0 + u1) / 2, ul = Math.abs(u1 - u0), yc = (ya + yb) / 2, yl = yb - ya;
-        items.push(axis === 'x' ? { p: [cx + uc, yc, cz + off], s: [ul, yl, w] } : { p: [cx + off, yc, cz + uc], s: [w, yl, ul] });
-      };
-      push(ext - 0.05, ext + 0.3 * len, hMid - t, hMid);
-      push(ext + 0.3 * len - t, ext + 0.3 * len, 0, hMid);
-      push(ext + 0.3 * len - t, ext + len, 0, t);
-    }
-    return prim.instanced(parent, prim.UNIT_BOX, material, items, name);
+    return prim.gullLeads(parent, material, { cx, cz, bodyW: 2 * ext, bodyD: 2 * ext, sides: axis, sideList: sides, positions, leadLen: len, leadW: w, leadT: t, yMid: hMid, name });
   }
 
   // ---------------------------------------------------------------- FRONT parts
@@ -147,7 +137,7 @@ export function build(ctx) {
     const gg = grp('tc356', { label: 'BGA-style IC (marked TC356)', kind: 'ic', status: 'photo-verified',
       desc: 'Package footprint measured on photo 4; its marking reads "Infineon TriCore SAK-TC356TA 64F300S AB" (legible in the photo). That marking is the verified part; the package type is inferred, because no photo shows the underside, so "BGA-style" is an assumption. The row of solder balls drawn under the package edge is ILLUSTRATIVE (ball pitch 0.8 mm, diameter 0.45 mm and the stand-off are assumed; the real ball map is hidden). Height is assumed. Nothing is claimed about its role inside UniJack.' });
     const standoff = 0.4, bd = 0.45, pitch = 0.8;
-    prim.boxPart(gg, { size: [b.w - 2.6, standoff * 0.8, b.d - 2.6], pos: [b.cx, 0.05, b.cz], side: M.balls });
+    prim.boxPart(gg, { size: [b.w - 2.6, standoff * 0.8, b.d - 2.6], pos: [b.cx, 0.05, b.cz], side: M.balls, sharp: true });
     const balls = [];
     for (const inset of [0.6, 0.6 + pitch]) {
       const nx = Math.floor((b.w - 2 * inset) / pitch) + 1, nz = Math.floor((b.d - 2 * inset) / pitch) + 1;
@@ -172,9 +162,10 @@ export function build(ctx) {
   {   // silver electrolytic can
     const c = D.F.ecap, cx = f.x(c.c[0]), cz = f.z(c.c[1]), r = f.len(c.r);
     const gg = grp('ecap', { label: 'Silver can, capacitor-style (marked 100 HFT C53)', kind: 'cap', status: 'photo-verified',
-      desc: 'Appears to be an SMD aluminium electrolytic capacitor can on a black seat with a tin terminal tab (inferred from its shape); printing "100 HFT C53" is legible in photo 4. Height (about 6 mm) and seat are assumed. The can diameter is taken from the top outline of the can in the photo (about 6.7 mm), which may slightly overstate the true diameter because the top is nearer the camera.' });
+      desc: 'Appears to be an SMD aluminium electrolytic capacitor can on a black seat with a tin terminal tab (inferred from its shape); printing "100 HFT C53" is legible in photo 4. Height (about 6 mm), the seat and the size of the bevelled rim at the top of the can (visible in the photos, about 0.4 mm assumed) are assumed. The can diameter is taken from the top outline of the can in the photo (about 6.7 mm), which may slightly overstate the true diameter because the top is nearer the camera.' });
     prim.cylPart(gg, { r: r + 0.3, h: 0.9, pos: [cx, 0, cz], side: mat.plasticBlack, segments: 48 });
-    prim.cylPart(gg, { frame: f, r, h: 5.2, pos: [cx, 0.9, cz], top: photoF, side: M.alu, segments: 56 });
+    prim.cylPart(gg, { r, h: 4.8, pos: [cx, 0.9, cz], side: M.alu, segments: 56 });
+    prim.cylPart(gg, { frame: f, r, rTop: r - 0.4, h: 0.4, pos: [cx, 5.7, cz], top: photoF, side: M.alu, segments: 56 });   // chamfered rim (gallery-1 and photo 4 show a bevelled can top; the 0.4 mm size is assumed)
     const bead = new THREE.Mesh(new THREE.TorusGeometry(r, 0.13, 8, 56), M.aluDark);
     bead.rotation.x = Math.PI / 2; bead.position.set(cx, 2.1, cz); bead.castShadow = true; gg.add(bead);
     fbox(gg, c.tab, 0.25, { side: mat.tin, radius: 0.05 });

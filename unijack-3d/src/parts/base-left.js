@@ -40,9 +40,9 @@ export async function build(ctx, group) {
   const newGroup = (name, md) => { const g = new THREE.Group(); g.name = name; group.add(g); meta(g, md); return g; };
 
   /** box from a texture-pixel bbox [x0,y0,x1,y1]; h and y0 in mm */
-  const B = (parent, b, h, { y0 = 0, top = null, side, radius = 0, rotY = 0 } = {}) => {
+  const B = (parent, b, h, { y0 = 0, top = null, side, radius = 0, rotY = 0, ...rest } = {}) => {
     const o = F.box(b);
-    return prim.boxPart(parent, { frame: F, size: [o.w, h, o.d], pos: [o.cx, y0, o.cz], rotY, radius, top, side });
+    return prim.boxPart(parent, { frame: F, size: [o.w, h, o.d], pos: [o.cx, y0, o.cz], rotY, radius, top, side, ...rest });   // rest: sharp, edges, bevel
   };
   /** small chip (passive) with tin end caps. axis = direction of the long side */
   const chip = (parent, b, h, axis = 'x', body = M.chipBody, capFrac = 0.24) => {
@@ -59,7 +59,7 @@ export async function build(ctx, group) {
     m.castShadow = m.receiveShadow = true; parent.add(m); return m;
   };
   /** flat tinned pad / plate lying on the board */
-  const plate = (parent, b, t = 0.12, material = M.tin, y0 = 0) => B(parent, b, t, { y0, top: photo, side: material });
+  const plate = (parent, b, t = 0.12, material = M.tin, y0 = 0) => B(parent, b, t, { y0, top: photo, side: material, sharp: true });   // stamped tabs and pads keep sharp edges
   /**
    * Board-level decal that hides the CLOSED latch arms and hooks baked into the flat-lay texture: when a latch rotates open the
    * baked arm would stay behind as a ghost. The decal is NOT the real board: what lies under a latch arm is not photographed, so it is
@@ -263,12 +263,13 @@ export async function build(ctx, group) {
   {
     const g = newGroup('J400-socket', { ref: 'J400', label: 'SO-DIMM-style module socket', kind: 'connector', status: 'photo-verified',
       desc: 'Long grey socket for the Mercury module; the designator J400 is printed beside it, and a TE logo and a moulded part number are legible on the housing in the photo. Footprint, contact-row pitch and count are read from the photo; housing height (5.2 mm), slot height and the module seating height are assumed typical values.' });
-    const seg = (y0, y1, xl) => {
-      B(g, [xl, y0, BACK, y1], HOUSING_H, { top: photo, side: M.housing });
-      B(g, [BACK, y0, FACE, y1], SLOT_LO, { top: null, side: M.housing });                     // lower plate
-      B(g, [BACK, y0, FACE, y1], HOUSING_H - SLOT_HI, { y0: SLOT_HI, top: photo, side: M.housing });   // top lip over the slot
+    // The housing is one moulding built from three segments: top edges that meet another segment flush, or meet the lip, are not bevelled
+    const seg = (y0, y1, xl, nz, pz) => {
+      B(g, [xl, y0, BACK, y1], HOUSING_H, { top: photo, side: M.housing, edges: { nz, pz, px: false } });
+      B(g, [BACK, y0, FACE, y1], SLOT_LO, { top: null, side: M.housing, edges: { nz, pz, nx: false } });                     // lower plate
+      B(g, [BACK, y0, FACE, y1], HOUSING_H - SLOT_HI, { y0: SLOT_HI, top: photo, side: M.housing, bevel: 0.2, edges: { nz, pz, nx: false } });   // top lip over the slot
     };
-    seg(YTOP, 52, 328); seg(52, 613, 341); seg(613, YBOT, 328);
+    seg(YTOP, 52, 328, true, false); seg(52, 613, 341, false, false); seg(613, YBOT, 328, false, true);
     B(g, [BACK - 2, 52, BACK + 1, 613], SLOT_HI - SLOT_LO, { y0: SLOT_LO, side: M.housingDark });     // dark slot back wall
     B(g, [328, 52, 341, 80], 2.0, { top: photo, side: M.housingDark });                               // dark side post (top-left)
     B(g, [329, 369, 340, 385], 1.1, { top: photo, side: M.housingDark });                              // keying block (left)
@@ -276,15 +277,16 @@ export async function build(ctx, group) {
     // contact tails: photo shows a left row and two staggered rows on the mouth side (pitch ~4.03-4.2 px, >=129 per row)
     const tails = { left: [], rowA: [], rowB: [] }, slotA = [], slotB = [];
     const rowY = (n, y0, y1) => Array.from({ length: n }, (_, k) => y0 + (k * (y1 - y0)) / (n - 1));
+    // tails are flat feet with an assumed concave toe fillet (prim.UNIT_FOOT: the fillet sits on the unit's +x end, so left-row feet are turned round)
     for (const y of [...rowY(73, 77.5, 367), ...rowY(56, 387.5, 611)]) {
-      tails.left.push({ p: [X(335), 0.06, Z(y)], s: [mm(12), 0.12, 0.27] });
-      tails.left.push({ p: [X(340.2), 0.3, Z(y)], s: [0.2, 0.55, 0.27] });
+      tails.left.push({ p: [X(335), 0.06, Z(y)], s: [mm(12), 0.12, 0.27], ry: Math.PI });
+      tails.left.push({ p: [X(340.2), 0.3, Z(y)], s: [0.2, 0.55, 0.27], ry: Math.PI });
     }
     for (const y of rowY(131, 58, 607)) { tails.rowA.push({ p: [X(402), 0.06, Z(y)], s: [mm(18), 0.12, 0.27] }); slotA.push({ p: [X(381), SLOT_LO + 0.06, Z(y)], s: [mm(18), 0.1, 0.26] }); }
     for (const y of rowY(128, 83, 613)) { tails.rowB.push({ p: [X(415.5), 0.06, Z(y)], s: [mm(10.5), 0.12, 0.27] }); slotB.push({ p: [X(381), SLOT_HI - 0.07, Z(y)], s: [mm(18), 0.1, 0.26] }); }
-    prim.instanced(g, prim.UNIT_BOX, M.tin, tails.left, 'J400-tails-left');
-    prim.instanced(g, prim.UNIT_BOX, M.darkContact, tails.rowA, 'J400-tails-mouth-A');
-    prim.instanced(g, prim.UNIT_BOX, M.tin, tails.rowB, 'J400-tails-mouth-B');
+    prim.instanced(g, prim.UNIT_FOOT, M.tin, tails.left, 'J400-tails-left');
+    prim.instanced(g, prim.UNIT_FOOT, M.darkContact, tails.rowA, 'J400-tails-mouth-A');
+    prim.instanced(g, prim.UNIT_FOOT, M.tin, tails.rowB, 'J400-tails-mouth-B');
     prim.instanced(g, prim.UNIT_BOX, M.gold, slotA, 'J400-slot-contacts-lower');
     prim.instanced(g, prim.UNIT_BOX, M.gold, slotB, 'J400-slot-contacts-upper');
   }
@@ -303,7 +305,7 @@ export async function build(ctx, group) {
     latches.push({ obj, axis, openAngle });
     return obj;
   };
-  const ARM_Y0 = SLOT_HI + 0.25, ARM_T = 0.55;              // arm plate sits above the seated module top (assumed)
+  const ARM_Y0 = SLOT_HI + 0.25, ARM_T = 0.55;              // arm plate sits above the seated module top (assumed); stamped steel: sharp edges
   const HOOK_Y0 = SLOT_HI, HOOK_H = 1.2;
   const OPEN = THREE.MathUtils.degToRad(5);
   const hookPin = (parent, cxPx, zPx0, zPx1) => {
@@ -314,18 +316,18 @@ export async function build(ctx, group) {
   };
   const latchDesc = 'Spring clip at one end of the socket. From the photos it appears to hold the module down with a hook pin engaging a notch at the module end. Pivot location, the 5 degree opening angle and the plating colour are assumed (kinematics are not visible in the photos).';
   makeLatch('J400-latch-top', latchDesc, [FACE, 35], (o) => {
-    B(o, [FACE, 24, 562, 46], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
-    B(o, [FACE, 46, 421, 52], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
-    B(o, [470, 49, 502, 55], 0.45, { y0: ARM_Y0, top: photo, side: M.steel });
+    B(o, [FACE, 24, 562, 46], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch, sharp: true });
+    B(o, [FACE, 46, 421, 52], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch, sharp: true });
+    B(o, [470, 49, 502, 55], 0.45, { y0: ARM_Y0, top: photo, side: M.steel, sharp: true });
     B(o, [FACE, 22.4, 562, 24.2], 1.65, { y0: ARM_Y0 + ARM_T - 1.65, top: photo, side: M.latch });          // outer web: gives the clip its L profile
     B(o, [548, 26, 566, 46], HOOK_H, { y0: HOOK_Y0, top: photo, side: M.latch });
     hookPin(o, 569, 28, 47);
   }, [0, 1, 0], OPEN);
   makeLatch('J400-latch-bottom', latchDesc, [FACE, 625], (o) => {
-    B(o, [FACE, 617, 562, 633], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
-    B(o, [FACE, 633, 433, 647], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch });
-    B(o, [435, 633, 505, 646], 0.45, { y0: ARM_Y0, top: photo, side: M.steel });
-    B(o, [517, 633, 535, 643], 0.45, { y0: ARM_Y0, top: photo, side: M.steel });
+    B(o, [FACE, 617, 562, 633], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch, sharp: true });
+    B(o, [FACE, 633, 433, 647], ARM_T, { y0: ARM_Y0, top: photo, side: M.latch, sharp: true });
+    B(o, [435, 633, 505, 646], 0.45, { y0: ARM_Y0, top: photo, side: M.steel, sharp: true });
+    B(o, [517, 633, 535, 643], 0.45, { y0: ARM_Y0, top: photo, side: M.steel, sharp: true });
     B(o, [FACE, 646, 535, 647.8], 1.65, { y0: ARM_Y0 + ARM_T - 1.65, top: photo, side: M.latch });          // outer web
     B(o, [548, 609, 566, 629], HOOK_H, { y0: HOOK_Y0, top: photo, side: M.latch });
     hookPin(o, 569, 615, 628);
@@ -382,11 +384,11 @@ export async function build(ctx, group) {
     const g = newGroup('J304-usb', { ref: 'J304', label: 'USB-A-style receptacle', kind: 'connector', status: 'photo-verified',
       desc: 'Appears to be a single horizontal USB-A-style receptacle (one opening, steel shell); the designator J304 is printed beside it and legible in the photo. Footprint from the photo; the 6.3 mm height, the open front towards the board edge and the cream tongue are assumed from the 3/4 photo. The flat-lay photo also shows some of this part\'s side faces along the edges of its top-face pixels, so its outline and top-face pixels are approximate.' });
     const b = [5, 343, 171, 452], H = 6.3, T = 0.35;
-    B(g, b, T, { y0: H - T, top: photo, side: M.shell });                                      // top plate (photo: springs, windows)
+    B(g, b, T, { y0: H - T, top: photo, side: M.shell });                                      // top plate (photo: springs, windows); its edges get the folded-sheet half-round automatically (assumed radius)
     B(g, [5, 343, 171, 343 + 4], H - T - 0.2, { y0: 0.2, side: M.shell });                     // side walls
     B(g, [5, 452 - 4, 171, 452], H - T - 0.2, { y0: 0.2, side: M.shell });
     B(g, [167, 343, 171, 452], H - T - 0.2, { y0: 0.2, side: M.shell });                       // rear wall
-    B(g, [5, 343, 171, 452], 0.3, { y0: 0.2, side: M.rj45Carrier });                            // bottom plate
+    B(g, [5, 343, 171, 452], 0.3, { y0: 0.2, side: M.rj45Carrier, sharp: true });               // bottom plate
     // tongue (cream plastic) with four gold contacts
     B(g, [14, 350, 120, 445], 1.6, { y0: 1.6, side: M.cream });
     const o = F.box([14, 350, 120, 445]);
@@ -407,7 +409,7 @@ export async function build(ctx, group) {
     B(g, [13, 518, 165, 522], H - T - 0.2, { y0: 0.2, side: M.shell });
     B(g, [13, 676, 165, 680], H - T - 0.2, { y0: 0.2, side: M.shell });
     B(g, [161, 518, 165, 680], H - T - 0.2, { y0: 0.2, side: M.shell });
-    B(g, [13, 518, 165, 680], 0.3, { y0: 0.2, side: M.rj45Carrier });
+    B(g, [13, 518, 165, 680], 0.3, { y0: 0.2, side: M.rj45Carrier, sharp: true });
     // front frame (keeps the opening ~13.7 mm wide x 7.5 mm tall)
     const oz0 = 540, oz1 = 658, oy0 = 1.8, oy1 = 9.3;
     B(g, [13, 518, 22, oz0], H - 0.6, { y0: 0.2, side: M.shell });
@@ -432,8 +434,8 @@ export async function build(ctx, group) {
     // rear SMD tails (12 leads read from the photo)
     const ys = [554, 565.6, 584.4, 592.9, 601.3, 609.8, 618.2, 626.7, 635, 642, 659, 669.3];
     const tl = [];
-    for (const y of ys) { tl.push({ p: [X(179), 0.08, Z(y)], s: [mm(27), 0.16, mm(6)] }); tl.push({ p: [X(164), 0.6, Z(y)], s: [mm(3), 1.2, mm(6)] }); }
-    prim.instanced(g, prim.UNIT_BOX, M.tin, tl, 'J303-tails');
+    for (const y of ys) { tl.push({ p: [X(179), 0.08, Z(y)], s: [mm(27), 0.16, mm(6)] }); tl.push({ p: [X(164), 0.6, Z(y)], s: [mm(3), 1.2, mm(6)], ry: Math.PI }); }
+    prim.instanced(g, prim.UNIT_FOOT, M.tin, tl, 'J303-tails');                                 // flat feet with an assumed toe fillet
     plate(g, [47, 678, 95, 693], 0.25, M.steel);                                                // shield tab on the board (photo: tarnished tab)
   }
   {
@@ -455,9 +457,9 @@ export async function build(ctx, group) {
     const xs = [216, 259.5, 303, 346.6, 390.8, 435, 479, 522.5], cy = 681;
     const bodies = xs.map((x) => ({ p: [X(x), 0.4, Z(cy)], s: [mm(14), 0.8, mm(9)] }));
     const pads = [];
-    for (const x of xs) for (const s of [-1, 1]) pads.push({ p: [X(x), 0.14, Z(cy + s * 6.5)], s: [mm(19), 0.28, mm(3.2)] });
+    for (const x of xs) for (const s of [-1, 1]) pads.push({ p: [X(x), 0.14, Z(cy + s * 6.5)], s: [mm(3.2), 0.28, mm(19)], ry: s > 0 ? -Math.PI / 2 : Math.PI / 2 });   // fillet on the outer side
     prim.instanced(g, prim.UNIT_BOX, M.ledBody, bodies, 'LED-bodies');
-    prim.instanced(g, prim.UNIT_BOX, M.tin, pads, 'LED-pads');
+    prim.instanced(g, prim.UNIT_FOOT, M.tin, pads, 'LED-pads');
   }
 
   // small 0805 cap at the top edge next to the latch (x 508..520, y 12..25)
