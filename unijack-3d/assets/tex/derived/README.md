@@ -44,7 +44,7 @@ Maps are anti-aliased with a 0.6 px Gaussian; the relief is smoothed with 1.0 px
 
 ## This run
 
-Commit `0ef39d8a0ffdf475627c2e035744a8b4594ad3ff` (dirty tree for the tool and textures), 2026-10-12T01:51:29+00:00.
+Commit `62829ab2f26d7e9a19d7683367f6f17a95c6acef` (clean tree for the tool and textures), 2026-10-12T02:00:54+00:00.
 
 | texture | mask | silk | tin | dark | gold | marking | other | mean roughness | mean metalness | max normal tilt | delight ratio range (raw) | clamped px |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
