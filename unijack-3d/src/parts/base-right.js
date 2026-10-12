@@ -52,7 +52,7 @@ export async function build(ctx, group) {
   // SOIC-8 below-right of the FPGA
   {
     const g = mk({ label: 'SOIC-8 style IC', kind: 'ic', status: 'photo-derived',
-      desc: 'Appears to be an 8-lead SOIC: 4 gull-wing leads per side counted in the photo. Marking not legible; function not claimed; height assumed.' });
+      desc: 'Appears to be an 8-lead SOIC: 4 gull-wing leads per side counted in the photo. Marking not legible; function not claimed; height, lead shape and solder fillets assumed.' });
     pxBoxPart(ctx, g, [836, 330, 870, 368], 1.5, { top, side: mat.icBlack, radius: 0.1, name: 'body' });
     leadRows(ctx, g, LM, [
       { axis: 'x', face: 836, tip: 821, pos: [336.5, 346.1, 356.1, 366.1], w: 5.5, hTop: 0.75 },
@@ -87,7 +87,7 @@ export async function build(ctx, group) {
   tssop.forEach((t, i) => {
     const n = i + 4;                                            // the left group of three (base-left.js) is 1 to 3
     const g = mk({ label: `TSSOP-48-style IC ${n}`, kind: 'ic', status: 'photo-verified',
-      desc: `One of six similar 48-lead TSSOP-style packages on the base board (24 leads per long side counted in the photo); numbered 1 to 6 here only to tell them apart. This is number ${n}, in the right-hand group of three (4 to 6); the left-hand group (1 to 3) sits under the Mercury module. Marking legible in the photo includes "LVC16T245"; no function claimed. Height assumed.` });
+      desc: `One of six similar 48-lead TSSOP-style packages on the base board (24 leads per long side counted in the photo); numbered 1 to 6 here only to tell them apart. This is number ${n}, in the right-hand group of three (4 to 6); the left-hand group (1 to 3) sits under the Mercury module. Marking legible in the photo includes "LVC16T245"; no function claimed. Height, lead shape and the solder fillets at each foot assumed.` });
     pxBoxPart(ctx, g, t.b, 1.1, { top, side: mat.icBlack, radius: 0.08, name: 'body' });
     const ys = range(24, t.lead0, 4.0);
     leadRows(ctx, g, LM, [
@@ -103,11 +103,14 @@ export async function build(ctx, group) {
   function longConnector({ ud, side, housing, channel, tabs, lead, contacts }) {
     const g = mk(ud);
     const [hx0, hy0, hx1, hy1] = housing, [cx0, cy0, cx1, cy1] = channel;
+    // Walls around the contact channel. The two SHORT end walls run the full depth and the long walls sit between them, so the
+    // T-junctions (where prim.freeEdges keeps an edge sharp) fall on the short inner edges and the long channel edges keep their bevel.
+    const longAxis = (hx1 - hx0) >= (hy1 - hy0);
+    const walls = longAxis
+      ? [{ b: [hx0, hy0, cx0, hy1] }, { b: [cx1, hy0, hx1, hy1] }, { b: [cx0, hy0, cx1, cy0] }, { b: [cx0, cy1, cx1, hy1] }]
+      : [{ b: [hx0, hy0, hx1, cy0] }, { b: [hx0, cy1, hx1, hy1] }, { b: [hx0, cy0, cx0, cy1] }, { b: [cx1, cy0, hx1, cy1] }];
     mergedBoxes(ctx, g, [
-      { b: [hx0, hy0, hx1, cy0], h: CONN_TOP },   // walls around the contact channel
-      { b: [hx0, cy1, hx1, hy1], h: CONN_TOP },
-      { b: [hx0, cy0, cx0, cy1], h: CONN_TOP },
-      { b: [cx1, cy0, hx1, cy1], h: CONN_TOP },
+      ...walls.map((w) => ({ ...w, h: CONN_TOP })),
       { b: channel, h: floorH },                   // channel floor (photo shows the gold contacts here)
       ...tabs.map((b) => ({ b, h: 4.6 })),         // end tabs / latches, height assumed
     ], { top, side, name: 'housing' });
@@ -179,7 +182,7 @@ export async function build(ctx, group) {
   /* =============================================================================================================== */
   {
     const g = mk({ label: 'QFP-64-style IC', kind: 'ic', status: 'photo-derived',
-      desc: 'Appears to be a 64-lead QFP: 16 gull-wing leads per side counted in the photo. The rotated marking is only partly legible; function not claimed; height assumed.' });
+      desc: 'Appears to be a 64-lead QFP: 16 gull-wing leads per side counted in the photo. The rotated marking is only partly legible; function not claimed; height, lead shape and solder fillets assumed.' });
     pxBoxPart(ctx, g, [1232, 277, 1320, 357], 1.5, { top, side: mat.icBlack, radius: 0.1, name: 'body' });
     leadRows(ctx, g, LM, [
       { axis: 'x', face: 1233, tip: 1212, pos: range(16, 289, 3.95), w: 2.3, hTop: 0.7, t: 0.12 },
@@ -190,7 +193,7 @@ export async function build(ctx, group) {
   }
   {
     const g = mk({ label: 'SOIC-8 style IC (right)', kind: 'ic', status: 'photo-derived',
-      desc: 'Appears to be an 8-lead SOIC with 4 leads on each long side (top and bottom in the photo). Marking not legible; function not claimed; height assumed.' });
+      desc: 'Appears to be an 8-lead SOIC with 4 leads on each long side (top and bottom in the photo). Marking not legible; function not claimed; height, lead shape and solder fillets assumed.' });
     pxBoxPart(ctx, g, [1376, 329, 1420, 357], 1.5, { top, side: mat.icBlack, radius: 0.1, name: 'body' });
     leadRows(ctx, g, LM, [
       { axis: 'y', face: 329, tip: 319, pos: [1377, 1388, 1399, 1409.5], w: 5, hTop: 0.75 },
@@ -216,7 +219,7 @@ export async function build(ctx, group) {
   }
   {
     const g = mk({ label: 'DPAK style power device', kind: 'ic', status: 'photo-derived',
-      desc: 'Appears to be a DPAK-style (TO-252-like) part: dark plastic body, 3 legs on the left and a metal tab on the right. Marking not claimed; height assumed.' });
+      desc: 'Appears to be a DPAK-style (TO-252-like) part: dark plastic body, 3 legs on the left and a metal tab on the right. Marking not claimed; height, lead shape and solder fillets assumed.' });
     pxBoxPart(ctx, g, [1363, 550, 1414, 600], 2.3, { top, side: mat.icBlack, radius: 0.1, name: 'body' });
     pxBoxPart(ctx, g, [1414, 553, 1421, 600], 0.9, { top, side: mat.tin, name: 'tab' });
     leadRows(ctx, g, LM, [
@@ -227,21 +230,24 @@ export async function build(ctx, group) {
   /* =============================================================================================================== */
   /* Pin headers J305 / J306 / J307 (2 columns, pin-pair counts read from the photo)                                */
   /* =============================================================================================================== */
+  // Heights ASSUMED, judged against gallery-1: there the pins stand well clear of a low shroud (exposed pin length about half the
+  // shroud width), so the shroud is kept low (2.6 mm) and the pins reach about 5.4 mm; the earlier 3.4 / 4.6 mm hid most of the pin.
+  const SHROUD_H = 2.6, PIN_TOP = 5.4;
   function header({ ref, rows, body, tails, colX, pinY }) {
     const g = mk({ ref, label: `2 x ${rows} pin header`, kind: 'connector', status: 'photo-verified',
-      desc: `Designator ${ref} is legible. Appears to be a shrouded 2-column SMD pin header; ${rows} pin pairs counted in the photo (gold pin tips visible inside a dark shroud, tails on the left). Shroud height and pin length assumed.` });
+      desc: `Designator ${ref} is legible. Appears to be a shrouded 2-column SMD pin header with vertical pins; ${rows} pin pairs counted in the photo (gold pin tips visible end-on inside a dark shroud, tails on the left). Shroud height (about ${SHROUD_H} mm) and pin height (about ${PIN_TOP} mm; in the 3/4 photo the pins stand well above the shroud) are assumed, as are the pointed pin tips and the solder fillets at the tails.` });
     const [x0, y0, x1, y1] = body, wall = 7;
     mergedBoxes(ctx, g, [
       { b: body, h: 1.0 },                                  // dark floor of the shroud (photo shows it)
-      { b: [x0, y0, x0 + wall, y1], h: 3.4 }, { b: [x1 - wall, y0, x1, y1], h: 3.4 },
-      { b: [x0 + wall, y0, x1 - wall, y0 + 3], h: 3.4 }, { b: [x0 + wall, y1 - 3, x1 - wall, y1], h: 3.4 },
+      { b: [x0, y0, x0 + wall, y1], h: SHROUD_H }, { b: [x1 - wall, y0, x1, y1], h: SHROUD_H },
+      { b: [x0 + wall, y0, x1 - wall, y0 + 3], h: SHROUD_H }, { b: [x0 + wall, y1 - 3, x1 - wall, y1], h: SHROUD_H },
     ], { top, side: mat.plasticBlack, name: 'shroud' });
-    pinSet(ctx, g, mat.gold, colX.flatMap((x) => pinY.map((z) => ({ x, z, y0: 0.6, y1: 4.6, w: 2.6, d: 2.6 }))), 'pins');
-    const tl = tails.leadLen || 15;
+    pinSet(ctx, g, mat.gold, colX.flatMap((x) => pinY.map((z) => ({ x, z, y0: 0.6, y1: PIN_TOP, w: 2.6, d: 2.6 }))), 'pins');
+    const tl = tails.leadLen || 15, LF = 0.3, LFpx = LF * 8.72;
     mergedBoxes(ctx, g, tails.flatMap((y) => [
-      { b: [body[0] - tl, y - 2, body[0] + 4, y + 2], h: 0.12, sharp: true },
-      { fillet: { x: body[0] - tl, z: y, dir: '-x', L: 0.3, H: 0.12, W: 5.2 } },                 // assumed toe fillet at the tail tip
-      { fillet: { x: body[0] - 1, z: y, dir: '-x', L: 0.3, H: 0.4, W: 5.2 } },                  // and a heel fillet against the shroud wall
+      { b: [body[0] - tl + LFpx, y - 2, body[0] + 4, y + 2], h: 0.12, sharp: true },            // foot stops 0.3 mm short of the traced tip ...
+      { fillet: { x: body[0] - tl + LFpx, z: y, dir: '-x', L: LF, H: 0.12, W: 4.4 } },           // ... and the assumed toe fillet completes it to the tip
+      { fillet: { x: body[0] - 1, z: y, dir: '-x', L: LF, H: 0.4, W: 4.4 } },                   // heel fillet against the shroud wall
     ]), { ...LM, name: 'tails' });
     return g;
   }

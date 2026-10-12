@@ -39,7 +39,7 @@ export function mergedBoxes(ctx, parent, list, { top, side, name = 'merged' }) {
   list.forEach((it, i) => {
     if (it.fillet) {
       const F = it.fillet, ry = { '+x': 0, '-x': Math.PI, '+y': -Math.PI / 2, '-y': Math.PI / 2 }[F.dir] ?? 0;
-      tris(prim.placeTris(prim.filletTris(F.L, F.H, f.len(F.W), 2), [f.x(F.x), F.y0 || 0, f.z(F.z)], ry), Is);
+      tris(prim.placeTris(prim.filletTris(F.L, F.H, f.len(F.W)), [f.x(F.x), F.y0 || 0, f.z(F.z)], ry), Is);   // 3 profile segments above 0.25 mm
       return;
     }
     const r = rects[i], x0 = r.o[0], x1 = x0 + r.W, z0 = r.o[1], z1 = z0 + r.D, y0 = r.y0, y1 = r.y1;
@@ -86,9 +86,9 @@ export function leadBoxes({ axis, face, tip, pos, w = 3.5, t = 0.14, hTop = 0.5,
     seg(k(0.30), k(0.42), 0, hTop - t - 0.005);   // riser (top kept below the shoulder underside: no coplanar faces)
     const L = fillet ? Math.min(0.3, 0.25 * len / PX_MM) : 0, Lpx = L * PX_MM;
     seg(k(0.36), k(1.0) - dir * Lpx, 0, t);       // foot on the pad (the toe fillet completes it to the tip, so the lead extent is unchanged)
-    if (fillet) {                                   // ASSUMED solder: concave toe fillet at the tip, heel fillet behind the riser
+    if (fillet) {                                   // ASSUMED solder: concave toe fillet at the tip (inside the traced extent), heel fillet behind the riser
       const out1 = dir > 0 ? (axis === 'x' ? '+x' : '+y') : (axis === 'x' ? '-x' : '-y'), back = dir > 0 ? (axis === 'x' ? '-x' : '-y') : (axis === 'x' ? '+x' : '+y');
-      const W = w * 1.3;
+      const W = w * 1.1;                            // at most 1.1 x the foot width, so a macro zoom does not read as a notched tip
       const at = (fr, off = 0) => (axis === 'x' ? { x: k(fr) - dir * off, z: p } : { x: p, z: k(fr) - dir * off });
       out.push({ fillet: { ...at(1.0, Lpx), dir: out1, L, H: t, W } });
       out.push({ fillet: { ...at(0.30), dir: back, L: L * 0.7, H: Math.min(hTop - t - 0.01, 0.35), W } });

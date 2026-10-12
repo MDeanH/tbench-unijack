@@ -262,7 +262,7 @@ export async function build(ctx, group) {
 
   {
     const g = newGroup('J400-socket', { ref: 'J400', label: 'SO-DIMM-style module socket', kind: 'connector', status: 'photo-verified',
-      desc: 'Long grey socket for the Mercury module; the designator J400 is printed beside it, and a TE logo and a moulded part number are legible on the housing in the photo. Footprint, contact-row pitch and count are read from the photo; housing height (5.2 mm), slot height and the module seating height are assumed typical values.' });
+      desc: 'Long grey socket for the Mercury module; the designator J400 is printed beside it, and a TE logo and a moulded part number are legible on the housing in the photo. Footprint, contact-row pitch and count are read from the photo; housing height (5.2 mm), slot height, the module seating height and the solder fillets at the contact tails are assumed typical values.' });
     // The housing is one moulding built from three segments: top edges that meet another segment flush, or meet the lip, are not bevelled
     const seg = (y0, y1, xl, nz, pz) => {
       B(g, [xl, y0, BACK, y1], HOUSING_H, { top: photo, side: M.housing, edges: { nz, pz, px: false } });
@@ -271,22 +271,25 @@ export async function build(ctx, group) {
     };
     seg(YTOP, 52, 328, true, false); seg(52, 613, 341, false, false); seg(613, YBOT, 328, false, true);
     B(g, [BACK - 2, 52, BACK + 1, 613], SLOT_HI - SLOT_LO, { y0: SLOT_LO, side: M.housingDark });     // dark slot back wall
-    B(g, [328, 52, 341, 80], 2.0, { top: photo, side: M.housingDark });                               // dark side post (top-left)
-    B(g, [329, 369, 340, 385], 1.1, { top: photo, side: M.housingDark });                              // keying block (left)
+    B(g, [328, 52, 341, 80], 2.0, { top: photo, side: M.housingDark, edges: { px: false, nz: false } });   // dark side post (top-left): flush against the housing wall (+x) and the top segment (-z), so no bevel groove there
+    B(g, [329, 369, 340, 385], 1.1, { top: photo, side: M.housingDark, sharp: true });                      // keying block (left), flush against the housing wall
 
     // contact tails: photo shows a left row and two staggered rows on the mouth side (pitch ~4.03-4.2 px, >=129 per row)
     const tails = { left: [], rowA: [], rowB: [] }, slotA = [], slotB = [];
     const rowY = (n, y0, y1) => Array.from({ length: n }, (_, k) => y0 + (k * (y1 - y0)) / (n - 1));
-    // tails are flat feet with an assumed concave toe fillet (prim.UNIT_FOOT: the fillet sits on the unit's +x end, so left-row feet are turned round)
+    // tails are flat feet with an assumed concave toe fillet INSIDE the photo-traced extent (prim.footGeometry: box + fillet span the
+    // instance length exactly, fillet at most 0.3 mm; the fillet sits on the unit's +x end, so left-row feet are turned round)
+    const foot = (lenPx) => prim.footGeometry(prim.footFrac(mm(lenPx)));
     for (const y of [...rowY(73, 77.5, 367), ...rowY(56, 387.5, 611)]) {
       tails.left.push({ p: [X(335), 0.06, Z(y)], s: [mm(12), 0.12, 0.27], ry: Math.PI });
       tails.left.push({ p: [X(340.2), 0.3, Z(y)], s: [0.2, 0.55, 0.27], ry: Math.PI });
     }
-    for (const y of rowY(131, 58, 607)) { tails.rowA.push({ p: [X(402), 0.06, Z(y)], s: [mm(18), 0.12, 0.27] }); slotA.push({ p: [X(381), SLOT_LO + 0.06, Z(y)], s: [mm(18), 0.1, 0.26] }); }
+    // row A (dark) ends at px 410.2, just short of row B's start (410.3), so the two interleaved rows never touch
+    for (const y of rowY(131, 58, 607)) { tails.rowA.push({ p: [X(401.6), 0.06, Z(y)], s: [mm(17.2), 0.12, 0.27] }); slotA.push({ p: [X(381), SLOT_LO + 0.06, Z(y)], s: [mm(18), 0.1, 0.26] }); }
     for (const y of rowY(128, 83, 613)) { tails.rowB.push({ p: [X(415.5), 0.06, Z(y)], s: [mm(10.5), 0.12, 0.27] }); slotB.push({ p: [X(381), SLOT_HI - 0.07, Z(y)], s: [mm(18), 0.1, 0.26] }); }
-    prim.instanced(g, prim.UNIT_FOOT, M.tin, tails.left, 'J400-tails-left');
-    prim.instanced(g, prim.UNIT_FOOT, M.darkContact, tails.rowA, 'J400-tails-mouth-A');
-    prim.instanced(g, prim.UNIT_FOOT, M.tin, tails.rowB, 'J400-tails-mouth-B');
+    prim.instanced(g, foot(12), M.tin, tails.left, 'J400-tails-left');
+    prim.instanced(g, foot(17.2), M.darkContact, tails.rowA, 'J400-tails-mouth-A');
+    prim.instanced(g, foot(10.5), M.tin, tails.rowB, 'J400-tails-mouth-B');
     prim.instanced(g, prim.UNIT_BOX, M.gold, slotA, 'J400-slot-contacts-lower');
     prim.instanced(g, prim.UNIT_BOX, M.gold, slotB, 'J400-slot-contacts-upper');
   }
@@ -370,7 +373,7 @@ export async function build(ctx, group) {
     bodies.forEach((b, i) => {
       const n = i + 1;
       const g = newGroup(`TSSOP48-${n}`, { label: `TSSOP-48-style IC ${n}`, kind: 'ic', status: 'photo-verified',
-        desc: `One of six similar 48-lead TSSOP-style packages on the base board (24 gull-wing leads per long side counted in the photo); numbered 1 to 6 here only to tell them apart. This is number ${n}, in the left-hand group of three (1 to 3), which sits under the Mercury module when the kit is assembled; the right-hand group is 4 to 6. The marking legible in the photo includes LVC16T245; what the chip does on UniJack is not claimed. Body height 1.1 mm is assumed.` });
+        desc: `One of six similar 48-lead TSSOP-style packages on the base board (24 gull-wing leads per long side counted in the photo); numbered 1 to 6 here only to tell them apart. This is number ${n}, in the left-hand group of three (1 to 3), which sits under the Mercury module when the kit is assembled; the right-hand group is 4 to 6. The marking legible in the photo includes LVC16T245; what the chip does on UniJack is not claimed. Body height 1.1 mm, the gull-wing lead shape and the solder fillets at each foot are assumed.` });
       const o = F.box(b);
       B(g, b, 1.05, { y0: 0.12, top: photo, side: M.icBlack, radius: 0.12 });
       prim.gullLeads(g, M.tin, { cx: o.cx, cz: o.cz, bodyW: o.w, bodyD: o.d, sides: 'x', n: 24, pitch: mm(4.03), leadLen: 1.5, leadW: 0.26, leadT: 0.14, yMid: 0.5, name: `TSSOP48-${n}-leads` });
@@ -403,7 +406,7 @@ export async function build(ctx, group) {
   // =====================================================================================================
   {
     const g = newGroup('J303-rj45', { ref: 'J303', label: 'RJ45-style jack', kind: 'connector', status: 'photo-verified',
-      desc: 'Appears to be a shielded RJ45-style jack: steel shell, open front towards the board edge, eight gold contacts and two green lamps visible in the 3/4 photo, and rear SMD tails; the designator J303 is printed beside it and legible in the photo. Footprint from the photo. The 11.0 mm height is assumed: a rough matched-camera estimate from gallery-1 suggests a lower value (roughly 6 to 10 mm depending on the camera fit; low to medium confidence). The flat-lay photo also shows some of this jack\'s side faces (tan wires and frame edges appear along the lower and front edges of its top-face pixels), so its outline and top-face pixels are approximate.' });
+      desc: 'Appears to be a shielded RJ45-style jack: steel shell, open front towards the board edge, eight gold contacts and two green lamps visible in the 3/4 photo, and rear SMD tails; the designator J303 is printed beside it and legible in the photo. Footprint from the photo. The 11.0 mm height is assumed: a rough matched-camera estimate from gallery-1 suggests a lower value (roughly 6 to 10 mm depending on the camera fit; low to medium confidence). The solder fillets at the rear tails are assumed. The flat-lay photo also shows some of this jack\'s side faces (tan wires and frame edges appear along the lower and front edges of its top-face pixels), so its outline and top-face pixels are approximate.' });
     const b = [13, 518, 165, 680], H = 11.0, T = 0.4;                                          // H ASSUMED (see desc)
     B(g, b, T, { y0: H - T, top: photo, side: M.shell });                                      // top plate
     B(g, [13, 518, 165, 522], H - T - 0.2, { y0: 0.2, side: M.shell });
@@ -435,12 +438,12 @@ export async function build(ctx, group) {
     const ys = [554, 565.6, 584.4, 592.9, 601.3, 609.8, 618.2, 626.7, 635, 642, 659, 669.3];
     const tl = [];
     for (const y of ys) { tl.push({ p: [X(179), 0.08, Z(y)], s: [mm(27), 0.16, mm(6)] }); tl.push({ p: [X(164), 0.6, Z(y)], s: [mm(3), 1.2, mm(6)], ry: Math.PI }); }
-    prim.instanced(g, prim.UNIT_FOOT, M.tin, tl, 'J303-tails');                                 // flat feet with an assumed toe fillet
+    prim.instanced(g, prim.footGeometry(prim.footFrac(mm(27))), M.tin, tl, 'J303-tails');       // flat feet with an assumed 0.3 mm toe fillet inside the traced tip
     plate(g, [47, 678, 95, 693], 0.25, M.steel);                                                // shield tab on the board (photo: tarnished tab)
   }
   {
     const g = newGroup('rj45-neighbour-ICs', { label: 'Two small 8-lead ICs near J303', kind: 'ic', status: 'photo-derived',
-      desc: 'Two very small 8-lead SMD packages beside the RJ45 rear tails (four tiny leads per side). Footprints from the photo; 0.9 mm height assumed; markings are not legible.' });
+      desc: 'Two very small 8-lead SMD packages beside the RJ45 rear tails (four tiny leads per side). Footprints from the photo; 0.9 mm height, lead shape and solder fillets assumed; markings are not legible.' });
     for (const b of [[207, 587, 218, 603], [207, 621, 218, 637]]) {
       const o = F.box(b);
       B(g, b, 0.9, { y0: 0.1, top: photo, side: M.icBlack });
@@ -457,9 +460,9 @@ export async function build(ctx, group) {
     const xs = [216, 259.5, 303, 346.6, 390.8, 435, 479, 522.5], cy = 681;
     const bodies = xs.map((x) => ({ p: [X(x), 0.4, Z(cy)], s: [mm(14), 0.8, mm(9)] }));
     const pads = [];
-    for (const x of xs) for (const s of [-1, 1]) pads.push({ p: [X(x), 0.14, Z(cy + s * 6.5)], s: [mm(3.2), 0.28, mm(19)], ry: s > 0 ? -Math.PI / 2 : Math.PI / 2 });   // fillet on the outer side
+    for (const x of xs) for (const s of [-1, 1]) pads.push({ p: [X(x), 0.14, Z(cy + s * 6.5)], s: [mm(3.2), 0.28, mm(19)], ry: s > 0 ? -Math.PI / 2 : Math.PI / 2 });   // fillet on the outer side, inside the pad extent
     prim.instanced(g, prim.UNIT_BOX, M.ledBody, bodies, 'LED-bodies');
-    prim.instanced(g, prim.UNIT_FOOT, M.tin, pads, 'LED-pads');
+    prim.instanced(g, prim.footGeometry(prim.footFrac(mm(3.2))), M.tin, pads, 'LED-pads');
   }
 
   // small 0805 cap at the top edge next to the latch (x 508..520, y 12..25)

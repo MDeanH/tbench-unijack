@@ -173,7 +173,7 @@ export function build(ctx) {
   {   // TSSOP-style IC
     const t = D.F.tssop, b = f.box(t.body);
     const gg = grp('tssop16', { label: '16-lead gull-wing IC (TSSOP-style)', kind: 'ic', status: 'photo-derived',
-      desc: 'Footprint and lead count (8 per long side) traced from photo 4; the package type is inferred from its shape and its marking is not quoted. Body height (about 1.1 mm) and lead shape are assumed.' });
+      desc: 'Footprint and lead count (8 per long side) traced from photo 4; the package type is inferred from its shape and its marking is not quoted. Body height (about 1.1 mm), lead shape and the solder fillets at each foot are assumed.' });
     fbox(gg, t.body, 1.0, { y0: 0.1, side: mat.icBlack, radius: 0.08 });
     const off0 = f.z(t.leadsCy) - b.cz, pitch = t.pitch / s;
     gull(gg, mat.tin, { cx: b.cx, cz: b.cz, ext: b.w / 2, axis: 'x', sides: [-1, 1], positions: Array.from({ length: t.n }, (_, i) => off0 + (i - (t.n - 1) / 2) * pitch), len: 1.15, w: 0.3, t: 0.14, hMid: 0.55, name: 'leads' });
@@ -234,7 +234,7 @@ export function build(ctx) {
   {   // SOIC-8
     const S = D.B.soic, b = reg.box(S.body);
     const gg = grp('soic8', { label: 'SOIC-style 8-lead IC (back)', kind: 'ic', status: 'photo-derived',
-      desc: 'Black 8-lead gull-wing body (4 leads per long side at about 1.3 mm pitch) on the back face, traced from photo 4 (back). Appears SOIC-8 sized; its marking is not legible enough to quote. Height about 1.4 mm is assumed.' });
+      desc: 'Black 8-lead gull-wing body (4 leads per long side at about 1.3 mm pitch) on the back face, traced from photo 4 (back). Appears SOIC-8 sized; its marking is not legible enough to quote. Height about 1.4 mm, lead shape and solder fillets are assumed.' });
     hangBox(gg, b, 1.4, { standoff: 0.1, side: mat.icBlack, radius: 0.08 });
     const lg = hang(); gg.add(lg);
     const xs = S.leadX.map((xb) => reg.toLocal(xb, 181)[0] - b.cx);

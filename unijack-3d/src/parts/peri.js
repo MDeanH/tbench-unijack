@@ -71,7 +71,7 @@ export function build(ctx) {
       return { o: A, u: [(B[0] - A[0]) / W, (B[1] - A[1]) / W], v: [(D[0] - A[0]) / Dd, (D[1] - A[1]) / Dd], W, D: Dd, y0: bx.y0 ?? 0, y1: bx.y1 }; };
     const rects = boxes.filter((bx) => !bx.fillet && !(bx.taper > 0)).map(rectOf);
     for (const bx of boxes) {
-      if (bx.fillet) { const F = bx.fillet; prim.appendTris(side, prim.placeTris(prim.filletTris(F.L, F.H, F.W, 2), [F.o[0], F.y0 ?? 0, F.o[1]], F.ry || 0)); continue; }
+      if (bx.fillet) { const F = bx.fillet; prim.appendTris(side, prim.placeTris(prim.filletTris(F.L, F.H, F.W), [F.o[0], F.y0 ?? 0, F.o[1]], F.ry || 0)); continue; }   // 3 segments above 0.25 mm
       const bot = bx.c, tp = bx.taper > 0 ? inset(bot, bx.taper) : bot, y0 = bx.y0 ?? 0, y1 = bx.y1;
       if (!(bx.taper > 0) && !bx.sharp) {
         const r = rectOf(bx), c = bx.bevel ?? prim.autoBevel(r.W, y1 - y0, r.D);
@@ -128,20 +128,22 @@ export function build(ctx) {
     const map = (u, v) => (orient === 'h' ? [u, v] : [v, u]);            // (along, across) -> texture px
     // Each lead row may carry its own start offset u0 and pitch (the texture is a warped photo, so the two rows of one connector
     // can differ by a pixel or two); `dark` rows use a dark tin because the photo shows only dark hairline tips there.
-    const leadItems = [], darkLeadItems = [], contactItems = [];
+    const leadGroups = new Map(), contactItems = [];                      // one instanced mesh per (material, fillet fraction)
     const T = 0.12, LW = 0.26, RISER = 0.9, ry = -a;
     for (const row of leads.rows) {
       const dir = Math.sign(row.tip - row.base) || 1, lenMM = Math.abs(row.tip - row.base) / F.s;
-      const items = row.dark ? darkLeadItems : leadItems;
+      // feet are prim.footGeometry (flat foot + an assumed concave toe fillet on the unit's +x end, together spanning the unit
+      // length, fillet at most 0.3 mm): an instance scaled to lenMM spans exactly base..tip, so the connector's extent (used by the
+      // mating fit) is unchanged. Turn the unit's +x towards the lead tip.
+      const frac = prim.footFrac(lenMM), key = `${row.dark ? 'dark' : 'tin'}|${frac.toFixed(3)}`;
+      if (!leadGroups.has(key)) leadGroups.set(key, { dark: !!row.dark, geo: prim.footGeometry(frac), items: [] });
+      const items = leadGroups.get(key).items;
       const u0 = row.u0 ?? leads.u0, pitch = row.pitch ?? leads.pitch;
-      // feet are prim.UNIT_FOOT (flat foot + an assumed concave toe fillet on the unit's +x end): turn +x towards the lead tip
       const phi = orient === 'h' ? (dir > 0 ? -Math.PI / 2 : Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
       for (let i = 0; i < leads.n; i++) {
         const u = u0 + i * pitch;
-        // the foot box plus its fillet (unit x -0.5..0.9) spans exactly base..tip, so the connector's extent (used by the mating fit) is unchanged
-        const sx = lenMM / 1.4;
-        const [cx, cy] = mm(rot(...map(u, row.base + dir * 0.5 * sx * F.s)));
-        items.push({ p: [cx, T / 2, cy], s: [sx, T, LW], ry: ry + phi });
+        const [cx, cy] = mm(rot(...map(u, row.base + dir * 0.5 * lenMM * F.s)));
+        items.push({ p: [cx, T / 2, cy], s: [lenMM, T, LW], ry: ry + phi });
         const [rx, rz] = mm(rot(...map(u, row.base + dir * 0.06 * F.s)));
         items.push({ p: [rx, RISER / 2, rz], s: [0.1, RISER, LW], ry: ry + phi });
       }
@@ -154,13 +156,13 @@ export function build(ctx) {
         contactItems.push({ p: [cx, H_FLOOR + contacts.h / 2, cy], s: orient === 'h' ? [0.2, contacts.h, 0.13] : [0.13, contacts.h, 0.2], ry });
       }
     }
-    prim.instanced(grp, prim.UNIT_FOOT, footTin, leadItems, 'leads');
-    if (darkLeadItems.length) prim.instanced(grp, prim.UNIT_FOOT, footDark, darkLeadItems, 'leads-dark');
+    let li = 0;
+    for (const { dark, geo, items } of leadGroups.values()) prim.instanced(grp, geo, dark ? footDark : footTin, items, dark ? 'leads-dark' : (li++ ? `leads-${li}` : 'leads'));
     prim.instanced(grp, prim.UNIT_BOX, contactBronze, contactItems, 'contacts');
     prim.meta(grp, {
       ref, kind: 'connector', status: 'photo-verified',
       label: `Board-to-board receptacle ${ref}`,
-      desc: `Appears to be a two-row board-to-board receptacle: about ${leads.n} leads per row counted in the photo (the lead pitch is about 11.1 px in the photo texture; the board's millimetre scale rests on an assumed 0.635 mm connector pitch, so a pitch in mm is an assumption here, not a measurement). The designator ${ref} is printed on the board and legible in the photo. Footprint is photo-derived; wall height about ${H_HOUSING} mm, slot depth and contact shapes are assumed.`,
+      desc: `Appears to be a two-row board-to-board receptacle: about ${leads.n} leads per row counted in the photo (the lead pitch is about 11.1 px in the photo texture; the board's millimetre scale rests on an assumed 0.635 mm connector pitch, so a pitch in mm is an assumption here, not a measurement). The designator ${ref} is printed on the board and legible in the photo. Footprint is photo-derived; wall height about ${H_HOUSING} mm, slot depth, contact shapes and the solder fillets at the lead tips are assumed.`,
     });
     return grp;
   }
@@ -255,10 +257,11 @@ export function build(ctx) {
     // gull-wing lead: stub out of the body side, short vertical leg, foot lying on the pad
     footBoxes.push({ c: rectMM(s * 1.55, z, 0.8, 0.3), y0: 0.7, y1: 0.88 });
     footBoxes.push({ c: rectMM(s * 1.78, z, 0.16, 0.3), y0: 0.0, y1: 0.88 });
-    footBoxes.push({ c: rectMM(s * FOOT_X, z, 1.4, 0.6), y0: 0.0, y1: 0.14 });   // foot fills the photographed solder pad
-    // ASSUMED solder: concave toe fillet beyond the foot tip and a heel fillet climbing the leg (gallery-1 shows bright reflowed solder at every foot)
-    footBoxes.push({ fillet: { o: [s * (FOOT_X + 0.7), z], ry: s > 0 ? 0 : Math.PI, L: 0.3, H: 0.14, W: 0.7 } });
-    footBoxes.push({ fillet: { o: [s * 1.86, z], ry: s > 0 ? 0 : Math.PI, L: 0.3, H: 0.4, W: 0.7 } });
+    // foot + toe fillet together fill the photographed solder pad (x 1.55..2.95): the box stops 0.3 mm short of the pad end and the
+    // ASSUMED concave toe fillet completes it; a heel fillet climbs the leg (gallery-1 shows bright reflowed solder at every foot)
+    footBoxes.push({ c: rectMM(s * (FOOT_X - 0.15), z, 1.1, 0.6), y0: 0.0, y1: 0.14 });
+    footBoxes.push({ fillet: { o: [s * (FOOT_X + 0.4), z], ry: s > 0 ? 0 : Math.PI, L: 0.3, H: 0.14, W: 0.66 } });
+    footBoxes.push({ fillet: { o: [s * 1.86, z], ry: s > 0 ? 0 : Math.PI, L: 0.3, H: 0.4, W: 0.66 } });
   }
   const bodyGeo = mergeBoxes(bodyBoxes), pinGeo = mergeBoxes(pinBoxes), footGeo = mergeBoxes(footBoxes);
 
@@ -277,7 +280,7 @@ export function build(ctx) {
     hg.add(meshOf(bodyGeo, darkBody, 'body'), meshOf(pinGeo, pinGold, 'pins'), meshOf(footGeo, footTin, 'feet'));
     prim.meta(hg, {
       ref, kind: 'pin', status: 'photo-verified', label: `Pin header ${ref}`,
-      desc: `Appears to be a 2 x 5 surface-mount pin header: 10 pins and 10 gull-wing solder pads counted in the photos; the pad rows are about 22.75 px apart in the photo texture (about 1.3 mm at the model scale, which itself rests on an assumed 0.635 mm connector pitch). The designator ${ref} is printed on the board and legible in the photo. Footprint is photo-derived; the body height (about ${HDR_BODY} mm) and the pin height (about ${HDR_PIN_TOP} mm, in a range of about 4 to 5 mm from a camera fitted to gallery-1) are assumed.`,
+      desc: `Appears to be a 2 x 5 surface-mount pin header with vertical pins: 10 pins and 10 gull-wing solder pads counted in the photos; the pad rows are about 22.75 px apart in the photo texture (about 1.3 mm at the model scale, which itself rests on an assumed 0.635 mm connector pitch). The designator ${ref} is printed on the board and legible in the photo. The pins are modelled upright because the flat-lay photos show their tips end-on as two columns of small gold squares inside the body and nothing lying on the board beside it; in the 3/4 photo (gallery-1) they lean to the right only as every vertical edge at that edge of the frame does. Footprint is photo-derived; the body height (about ${HDR_BODY} mm), the pin height (about ${HDR_PIN_TOP} mm, in a range of about 4 to 5 mm from a camera fitted to gallery-1), the pin-tip taper and the solder fillets at the feet are assumed.`,
     });
     g.add(hg);
   }

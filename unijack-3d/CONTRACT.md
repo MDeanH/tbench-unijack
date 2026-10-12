@@ -51,10 +51,18 @@ without moving any pixel coordinate.
   gull-wing (shoulder, knee, foot) with toe and heel solder fillets; `prim.UNIT_FOOT` (flat foot + toe fillet on its +x end) and
   `prim.UNIT_PIN` (square pin, chamfered tip) are the unit geometries for instanced tails and pins.
 * Micro-geometry is ASSUMED detail (README honesty table): `prim.boxPart` bevels the edges of any free-standing box taller than 2 mm
-  (0.2 mm; 0.3 mm above 4 mm; thin shell plates get a half-round) and the merged-box helpers do the same on edges that no flush or
-  taller box of the same batch meets. Pass `sharp: true` for stamped steel and for pieces that abut others flush, `edges: { px, nx, pz, nz }`
-  to switch single top edges off where separate boxes meet, `bevel: c` to force a size. Fillets and bevels must not change a part's
-  bounding box where that box is used for fitting (the three mating connector pairs, `tools/collide.mjs`): keep them inside the old extent.
+  and at least 1.2 mm wide in both plan directions (0.2 mm; 0.3 mm above 4 mm; thin shell plates get a half-round) and the merged-box
+  helpers do the same on edges that no flush or taller box of the same batch meets (`prim.freeEdges` samples each edge at its ends too,
+  so a thin wall abutting the end of an edge, a T-junction, keeps that whole edge sharp rather than leaving a notch; a neighbour that
+  overlaps the box does not count, its strip is hidden inside the neighbour). Lay out merged housings so T-junctions fall on SHORT edges
+  (end walls full depth, long walls between them). Pass `sharp: true` for stamped steel and for pieces that abut others flush,
+  `edges: { px, nx, pz, nz }` to switch single top edges off where separate `boxPart` boxes meet (no neighbour detection there),
+  `bevel: c` to force a size. Solder fillets (`prim.filletTris`) stay INSIDE the photo-traced lead extent: the foot stops short by the
+  fillet length and the fillet completes it to the tip (`leadGeometry`, `leadBoxes`, the PeriBoard feet); instanced feet use
+  `prim.footGeometry(prim.footFrac(len))`, a unit box plus toe fillet that together span the instance length with the fillet at most
+  0.3 mm (`UNIT_FOOT` is the 30 percent default). Fillets are at most 1.1 x the lead width and get 3 profile segments above 0.25 mm.
+  Fillets and bevels must not change a part's bounding box where that box is used for fitting (the three mating connector pairs,
+  `tools/collide.mjs`): keep them inside the old extent.
 * PCB body: `prim.boardSlab` (rectangle) or `prim.shapeBoard` (outline with notches and round holes, separate front/back photo).
 * Materials: `ctx.mat.*` (extend locally if needed; do not edit `src/lib/*`).
 * Group each physical part (housing + leads + pins) in a `THREE.Group`, add to the parent, and describe it with `prim.meta`.

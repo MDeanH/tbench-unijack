@@ -134,22 +134,30 @@ export function bevelBoxTris({ o = [0, 0], u = [1, 0], v = [0, 1], W, D, y0, y1,
 
 /**
  * Which top edges of plan rectangle `i` are free, i.e. not met by a flush or taller neighbour in `list` (so a bevel there would not
- * cut a groove into a surface that is really continuous). list = [{ o, u, v, W, D, y0, y1 }] as for bevelBoxTris. Each edge is sampled
- * at five points 0.05 mm outside it. Returns { pu, nu, pv, nv }.
+ * cut a groove into a surface that is really continuous). list = [{ o, u, v, W, D, y0, y1 }] as for bevelBoxTris.
+ * Each edge is sampled at five points including both ENDS (1, 25, 50, 75 and 99 percent of its length), 0.05 mm outside the edge,
+ * so a thin wall that only abuts the end of an edge (a T-junction, e.g. the front wall of a shroud meeting its side walls) still
+ * makes the whole edge sharp instead of leaving a 0.2 mm notch where the bevel strip would run past the junction. A neighbour that
+ * also covers the matching point 0.05 mm INSIDE the edge overlaps this box (end blocks, crossing walls): the bevel strip there is
+ * buried inside the neighbour's volume and hidden, so such neighbours do not count. Returns { pu, nu, pv, nv }.
  */
 export function freeEdges(list, i) {
   const b = list[i];
   const inside = (q, x, z) => { const dx = x - q.o[0], dz = z - q.o[1], s = dx * q.u[0] + dz * q.u[1], t = dx * q.v[0] + dz * q.v[1]; return s >= -1e-6 && s <= q.W + 1e-6 && t >= -1e-6 && t <= q.D + 1e-6; };
   const at = (s, t) => [b.o[0] + b.u[0] * s + b.v[0] * t, b.o[1] + b.u[1] * s + b.v[1] * t];
+  const FR = [0.01, 0.25, 0.5, 0.75, 0.99];
   const free = (fn) => {
-    for (let k = 0; k < 5; k++) {
-      const [x, z] = fn((k + 0.5) / 5);
-      for (let j = 0; j < list.length; j++) { const q = list[j]; if (j !== i && q.y1 >= b.y1 - 0.05 && q.y0 < b.y1 - 0.05 && inside(q, x, z)) return false; }
+    for (const a of FR) {
+      const [xo, zo] = fn(a, 1), [xi, zi] = fn(a, -1);                                       // just outside / just inside the edge
+      for (let j = 0; j < list.length; j++) {
+        const q = list[j];
+        if (j !== i && q.y1 >= b.y1 - 0.05 && q.y0 < b.y1 - 0.05 && inside(q, xo, zo) && !inside(q, xi, zi)) return false;
+      }
     }
     return true;
   };
   const e = 0.05;
-  return { pu: free((a) => at(b.W + e, a * b.D)), nu: free((a) => at(-e, a * b.D)), pv: free((a) => at(a * b.W, b.D + e)), nv: free((a) => at(a * b.W, -e)) };
+  return { pu: free((a, s) => at(b.W + s * e, a * b.D)), nu: free((a, s) => at(-s * e, a * b.D)), pv: free((a, s) => at(a * b.W, b.D + s * e)), nv: free((a, s) => at(a * b.W, -s * e)) };
 }
 
 /** BufferGeometry of a bevelled box centred in x/z with its base at y = 0 (same frame as BoxGeometry after translate(0, h/2, 0)).
@@ -173,8 +181,10 @@ export function trisToGeometry(buckets) {
 /**
  * Concave (meniscus) solder fillet: a prism along z. Local frame: x = 0 is the lead's tip face (height H there), the surface sinks
  * concavely to the pad at x = L; width W centred on z = 0; y = 0 is the pad. Only the visible cove and the two end caps are emitted.
+ * Fillets longer than 0.25 mm get three profile segments (two read as an angular wedge in macro close-ups); keep W at most about
+ * 1.1 x the lead width, and place the fillet INSIDE the photo-traced lead extent (shorten the foot by L), never beyond the tip.
  */
-export function filletTris(L, H, W, seg = 2) {
+export function filletTris(L, H, W, seg = L > 0.25 ? 3 : 2) {
   const prof = [];                                                      // from the top of the lead face down to the pad
   for (let i = 0; i <= seg; i++) { const th = Math.PI + (Math.PI / 2) * (i / seg); prof.push([L + L * Math.cos(th), H + H * Math.sin(th), -Math.cos(th) / L, -Math.sin(th) / H]); }
   const out = { pos: [], nor: [] }, hw = W / 2;
@@ -205,13 +215,27 @@ export function placeTris(t, [tx, ty, tz], ry = 0) {
 }
 export function appendTris(dst, src) { for (let i = 0; i < src.pos.length; i++) { dst.pos.push(src.pos[i]); dst.nor.push(src.nor[i]); } return dst; }
 
-/** Unit box (-0.5..0.5) plus a toe fillet on its +x end: for instanced flat lead feet / tails (fillet = 40 percent of the foot length, full foot height, 1.25 x its width). */
-export const UNIT_FOOT = (() => {
-  const box = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+/**
+ * Unit flat foot for instanced lead feet / tails: a box PLUS a concave toe fillet on its +x end, together spanning exactly
+ * -0.5..0.5 in x (the fillet takes the last `frac` of the length, full foot height, 1.1 x the foot width), so an instance scaled to
+ * [length, thickness, width] keeps the photo-traced tip where it was. Pick `frac` with footFrac(length) so the fillet is at most
+ * 0.3 mm long (and at most 40 percent of a short foot); geometries are cached per frac. UNIT_FOOT is the 30 percent default.
+ */
+const FOOT_CACHE = new Map();
+export function footGeometry(frac = 0.3, W = 1.1) {
+  frac = Math.min(0.5, Math.max(0.02, +frac.toFixed(3)));
+  const key = `${frac}|${W}`;
+  if (FOOT_CACHE.has(key)) return FOOT_CACHE.get(key);
+  const box = new THREE.BoxGeometry(1 - frac, 1, 1).toNonIndexed(); box.translate(-frac / 2, 0, 0);
   const b = { pos: Array.from(box.attributes.position.array), nor: Array.from(box.attributes.normal.array) };
-  appendTris(b, placeTris(filletTris(0.4, 1, 1.25, 2), [0.5, -0.5, 0]));
-  return trisToGeometry([[b, 0]]);
-})();
+  appendTris(b, placeTris(filletTris(frac, 1, W, 3), [0.5 - frac, -0.5, 0]));
+  const g = trisToGeometry([[b, 0]]);
+  FOOT_CACHE.set(key, g);
+  return g;
+}
+/** Fillet fraction for a foot `len` mm long: min(0.3 mm, 0.4 x len) of its length. */
+export const footFrac = (len) => Math.min(0.3, 0.4 * len) / Math.max(len, 1e-3);
+export const UNIT_FOOT = footGeometry(0.3);
 /** Unit square pin (-0.5..0.5) whose top 15 percent tapers to 55 percent width: the chamfered tip of a machined/stamped header pin. */
 export const UNIT_PIN = (() => {
   const t = { pos: [], nor: [] }, yb = 0.35, k = 0.275;
@@ -306,7 +330,7 @@ export const UNIT_BOX = new THREE.BoxGeometry(1, 1, 1);
 export function gullLeads(parent, mat, { cx, cz, bodyW, bodyD, sides = 'x', n, pitch, positions, sideList = [-1, 1], leadLen = 0.9, leadW = 0.22, leadT = 0.15, yMid = 0.45, fillet = true, name = 'leads' }) {
   const offs = positions || Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * pitch);
   const gap = positions ? Math.min(...offs.map((a, i) => Math.min(...offs.filter((_, j) => j !== i).map((b) => Math.abs(a - b)))).filter(Number.isFinite), 10) : pitch;
-  const geo = leadGeometry({ leadLen, leadW, leadT, yMid, fillet, filletW: Math.min(1.4 * leadW, (gap || leadW * 2) * 0.8) });
+  const geo = leadGeometry({ leadLen, leadW, leadT, yMid, fillet, filletW: Math.min(1.1 * leadW, (gap || leadW * 2) * 0.8) });
   const ext = sides === 'x' ? bodyW / 2 : bodyD / 2;
   const items = [];
   for (const side of sideList) for (const off of offs) {
@@ -315,22 +339,23 @@ export function gullLeads(parent, mat, { cx, cz, bodyW, bodyD, sides = 'x', n, p
   }
   return instanced(parent, geo, mat, items, name);
 }
-/** One gull-wing lead leaving a body face at x = 0 towards +x (y = 0 is the board). Shoulder top at yMid, foot from about 0.62 L to L. */
-export function leadGeometry({ leadLen: L, leadW: w, leadT: t, yMid, fillet = true, filletW = 1.3 * w }) {
+/** One gull-wing lead leaving a body face at x = 0 towards +x (y = 0 is the board). Shoulder top at yMid, foot from about 0.62 L to L.
+ *  The toe fillet sits INSIDE the lead extent (the foot box ends at L - fl and the fillet completes it to L), so x spans -0.05..L exactly. */
+export function leadGeometry({ leadLen: L, leadW: w, leadT: t, yMid, fillet = true, filletW = 1.1 * w }) {
   const b = { pos: [], nor: [] };
   const box = (x0, x1, y0, y1) => { const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, w).toNonIndexed(); g.translate((x0 + x1) / 2, (y0 + y1) / 2, 0); appendTris(b, { pos: Array.from(g.attributes.position.array), nor: Array.from(g.attributes.normal.array) }); };
   const xK0 = 0.3 * L, xK1 = Math.max(0.62 * L, xK0 + t), yTop = yMid, yBot = t;    // knee from (xK0, shoulder) down to (xK1, foot)
+  const fl = fillet ? Math.min(0.3, 0.3 * L) : 0, fh = Math.min(1.6 * t, yMid * 0.6);
   box(-0.05, xK0 + t * 0.3, yTop - t, yTop);                                        // shoulder (tucked 0.05 into the body)
-  box(xK1 - t * 0.3, L, 0, yBot);                                                   // foot
+  box(xK1 - t * 0.3, L - fl, 0, yBot);                                              // foot (the toe fillet completes it to L)
   {                                                                                  // sloped knee: a box rotated about z
     const dx = xK1 - xK0, dy = (yTop - t / 2) - (yBot / 2), len = Math.hypot(dx, dy);
     const g = new THREE.BoxGeometry(len, t, w).toNonIndexed(); g.rotateZ(-Math.atan2(dy, dx)); g.translate((xK0 + xK1) / 2, ((yTop - t / 2) + yBot / 2) / 2, 0);
     appendTris(b, { pos: Array.from(g.attributes.position.array), nor: Array.from(g.attributes.normal.array) });
   }
   if (fillet) {
-    const fl = Math.min(0.3, 0.3 * L), fh = Math.min(1.6 * t, yMid * 0.6);
-    appendTris(b, placeTris(filletTris(fl, fh, filletW, 2), [L, 0, 0]));                       // toe
-    appendTris(b, placeTris(filletTris(fl * 0.7, fh * 0.8, filletW, 2), [xK1 - t * 0.3, 0, 0], Math.PI));   // heel
+    appendTris(b, placeTris(filletTris(fl, fh, filletW), [L - fl, 0, 0]));                        // toe, inside the traced extent
+    appendTris(b, placeTris(filletTris(fl * 0.7, fh * 0.8, filletW), [xK1 - t * 0.3, 0, 0], Math.PI));   // heel, back under the knee
   }
   return trisToGeometry([[b, 0]]);
 }
