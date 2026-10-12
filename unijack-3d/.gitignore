@@ -7,3 +7,4 @@ dist/
 assets/*.glb
 renders/
 __pycache__/
+venv-bpy/

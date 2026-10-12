@@ -3,19 +3,23 @@
 
     python -I tools/blender/render.py --glb assets/unijack.glb --view hero --out renders/hero.png --samples 128 --size 1920x1080
     python -I tools/blender/render.py --glb assets/unijack.glb --match-photo        # calibrate exposure against gallery-1.jpg, writes exposure.json
+    python -I tools/blender/render.py --all --match-photo                           # calibrate both studios, then render the six library frames
 
 What it does
   * imports the GLB that tools/export-glb.mjs writes (named nodes, photo textures at neutral albedo, no lights), scaled to metres
   * builds a SYNTHETIC studio: three area lights (warm key above-front, cool fill, rim), a vertical-gradient world, a dark satin ground
     plane with a little reflection (`--studio white` swaps in a white sweep like the gallery photos' background)
-  * cameras that reproduce the viewer's presets (src/main.js VIEWS, dirFromAzEl and frameFor: 32 degree vertical fov, the same
-    bounding-box fit and fill), so a Cycles still frames the kit exactly as the browser viewer does
-  * material tweaks so the GLB's PBR reads as real in Cycles: solder mask / photo faces get a glossy coat, metals are true metals
-  * Open Image Denoise, AgX view transform, exposure matched so the plain solder mask has the same mean colour as gallery-1.jpg
-  * a sidecar <out>.json with provenance (model commit, GLB sha256, every setting, timings, the colour measurements) and the
-    disclosure sentence from index.html: nothing in these renders is CAD or a measured specification.
+  * cameras with the viewer's presets (src/main.js VIEWS: same az/el, the same 32 degree vertical fov and the same bounding-box fit rule,
+    `frameFor`, ported from the viewer; `viewer-camera.mjs` prints the viewer's own numbers for a side-by-side check)
+  * material tweaks so the GLB's PBR reads under a path tracer: photo faces get a specular level and a thin coat (their roughness,
+    metalness and normal come from the GLB's photo-derived maps and are kept or scaled through nodes, never overwritten), neutral metals
+    become true conductors with a matte floor, gold stays glossier. Every change is recorded per material in the sidecar.
+  * Open Image Denoise, AgX view transform, exposure matched so the plain solder mask has the same MEAN luminance as gallery-1.jpg
+    (exposure.json is pinned to the GLB it was calibrated for; a different GLB needs --match-photo again or an explicit --exposure)
+  * a sidecar <out>.json with provenance (model commit and dirty flag, GLB sha256, render.py blob hash, every setting, timings, the colour
+    measurements) and the disclosure sentence from index.html: nothing in these renders is CAD or a measured specification.
 
-Everything about the lighting, ground, background, depth of field and camera is synthetic. The board photographs are real.
+Everything about the lighting, ground, background and camera is synthetic. The board photographs are real.
 """
 import argparse
 import hashlib
@@ -41,6 +45,9 @@ MM = 0.001                                                      # the GLB is in 
 VIEWS = {'hero': (32, 34, 0.9), 'top': (0, 89, 0.94), 'low': (18, 11, 0.9), 'side': (90, 7, 0.9), 'under': (28, -34, 0.9)}
 FOV_V = 32.0                                                    # new THREE.PerspectiveCamera(32, ...): vertical fov in degrees
 BOARDS = ('base', 'peri', 'mercury')
+# the six library frames rendered by --all: (view, studio, output name)
+LIBRARY = [('hero', 'dark', 'hero'), ('low', 'dark', 'low'), ('top', 'dark', 'top'), ('side', 'dark', 'side'), ('under', 'dark', 'under'),
+           ('hero', 'white', 'hero-white')]
 
 # plain solder-mask patches used for the exposure match (texture px of assets/tex/base-top.webp -> base-board mm -> world; see README)
 # Photo side: the same physical patches in source-photos/gallery-1.jpg (3000x1688), inside / left-below the silkscreen rectangle left of the SO-DIMM socket.
@@ -51,6 +58,14 @@ PATCHES = {
     'B': {'tex': (198, 302, 235, 330), 'photo': (690, 855, 780, 915)},
 }
 PHOTO_MEANS_SRGB = {'A': (12.2, 150.8, 188.8), 'B': (4.3, 132.4, 170.2)}   # measured with PIL (mean RGB of the photo patches, 0..255)
+
+# material look (render choices, disclosed in the sidecar and README)
+PHOTO_SPECULAR = 0.30          # Specular IOR Level of the photo faces
+PHOTO_COAT = (0.08, 0.10)      # (Coat Weight, Coat Roughness) of the photo faces: a thin clear coat on the glossy mask
+METAL_FLOOR_NEUTRAL = 0.45     # roughness floor for neutral (steel / tin) conductors: shells, shields, pads, leads. Chosen look: gallery-1 shows dull, matte shields
+METAL_FLOOR_GOLD = 0.18        # roughness floor for gold-coloured conductors (pins, contacts): plating stays glossier
+METAL_CEIL = 0.6
+NEUTRAL_CHROMA = 0.15          # max-min of the linear base colour below this = neutral metal
 
 DISCLOSURE_FALLBACK = ('Illustrative model built from TBench gallery photographs, not CAD. Part heights, plastic and metal colours, the '
                        'PeriBoard stack height, PCB thickness and detail geometry are assumed.')
@@ -139,36 +154,106 @@ def import_glb(path):
     return root, by_board
 
 
-def tune_materials():
-    """Make the GLB's flat PBR read as real under a path tracer. Returns a description for the sidecar."""
-    changes = {'photo_faces': 0, 'metals': 0, 'plastics': 0}
+def _link_source(sock):
+    """'<node type>[<output>]' of what feeds a linked socket, for the sidecar."""
+    l = sock.links[0]
+    return f'{l.from_node.type.lower()}[{l.from_socket.name}]'
+
+
+def scale_linked(nt, bsdf, name, factor):
+    """A texture-linked scalar socket cannot be overwritten (Cycles ignores default_value while a link exists): put a clamped
+    multiply node between the texture and the socket instead. factor 1 leaves the graph alone. Returns the sidecar description."""
+    sock = bsdf.inputs[name]
+    src_desc = 'map ' + _link_source(sock)
+    if abs(factor - 1.0) < 1e-6: return src_desc + ' (kept)'
+    link = sock.links[0]; from_sock = link.from_socket
+    nt.links.remove(link)
+    mul = nt.nodes.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.use_clamp = True; mul.label = f'{name} x {factor:g}'
+    mul.inputs[1].default_value = factor
+    nt.links.new(from_sock, mul.inputs[0]); nt.links.new(mul.outputs[0], sock)
+    return f'{src_desc} x {factor:g} (Math node, clamped)'
+
+
+def metal_f0_gain(nt, bsdf, gain):
+    """Mirror the viewer's PHOTO_METAL_F0: on the photo faces a metal pixel's colour is its specular colour, and the GLB carries the
+    plain photographed grey (the pad's reflection of the photographer's softbox, not its reflectance). Blend Base Color towards
+    colour x gain where the metalness map says metal; dielectric pixels are unchanged. ASSUMED, as in the viewer's README row."""
+    base = bsdf.inputs['Base Color']; met = bsdf.inputs['Metallic']
+    if abs(gain - 1.0) < 1e-6 or not base.links or not met.links: return None
+    tex_out = base.links[0].from_socket; met_out = met.links[0].from_socket
+    nt.links.remove(base.links[0])
+    sc = nt.nodes.new('ShaderNodeVectorMath'); sc.operation = 'SCALE'; sc.inputs['Scale'].default_value = gain; sc.label = f'metal F0 x {gain:g}'
+    mix = nt.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'; mix.clamp_result = False; mix.label = 'metal pixels only'
+    nt.links.new(tex_out, sc.inputs[0]); nt.links.new(tex_out, mix.inputs['A']); nt.links.new(sc.outputs[0], mix.inputs['B'])
+    nt.links.new(met_out, mix.inputs['Factor']); nt.links.new(mix.outputs['Result'], base)
+    return f'photo colour x {gain:g} where the metalness map is 1 (Mix node keyed on the Metallic source), unchanged where 0'
+
+
+def tune_materials(photo_rough_scale=1.0, photo_metal_f0=1.5):
+    """Make the GLB's PBR read under a path tracer. Texture-linked sockets (the photo faces' roughness / metalness / normal come from the
+    exporter's photo-derived maps) are kept or scaled through nodes, never overwritten. Returns {summary counts, per-material record}."""
+    summary = {'photo_faces': 0, 'metals_neutral': 0, 'metals_gold': 0, 'plastics': 0, 'untouched': 0}
+    per_material = {}
     for m in bpy.data.materials:
-        if not m.use_nodes or m.node_tree is None: continue
-        bsdf = next((n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
-        if bsdf is None: continue
+        if not m.use_nodes or m.node_tree is None: summary['untouched'] += 1; per_material[m.name] = {'class': 'untouched', 'note': 'no node tree'}; continue
+        nt = m.node_tree
+        bsdf = next((n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if bsdf is None: summary['untouched'] += 1; per_material[m.name] = {'class': 'untouched', 'note': 'no Principled BSDF'}; continue
+        rough_s, metal_s, normal_s = bsdf.inputs['Roughness'], bsdf.inputs['Metallic'], bsdf.inputs['Normal']
         textured = bool(bsdf.inputs['Base Color'].links)
-        metal = bsdf.inputs['Metallic'].default_value
+        rec = {}
         if textured:
-            # solder mask and photographed part tops: a glossy mask with a thin clear coat; the photo is the albedo (neutral factor from the exporter)
-            bsdf.inputs['Roughness'].default_value = 0.50
-            bsdf.inputs['Specular IOR Level'].default_value = 0.30
-            bsdf.inputs['Coat Weight'].default_value = 0.08
-            bsdf.inputs['Coat Roughness'].default_value = 0.10
+            # solder mask and photographed part tops: the photo is the albedo (neutral factor from the exporter). Roughness / metalness /
+            # normal: the GLB's photo-derived maps when present (kept or scaled), else fixed values for a glossy mask.
+            rec['class'] = 'photo face'
+            rec['roughness'] = scale_linked(nt, bsdf, 'Roughness', photo_rough_scale) if rough_s.links else None
+            if not rough_s.links: rough_s.default_value = 0.50; rec['roughness'] = 'no map: set 0.50'
+            if metal_s.links:
+                rec['metallic'] = 'map ' + _link_source(metal_s) + ' (kept)'
+                f0 = metal_f0_gain(nt, bsdf, photo_metal_f0)
+                if f0: rec['base_color'] = f0
+            else:
+                rec['metallic'] = f'no map: kept {metal_s.default_value:.2f}'
+            rec['normal'] = ('map ' + _link_source(normal_s) + ' (kept)') if normal_s.links else 'none'
+            bsdf.inputs['Specular IOR Level'].default_value = PHOTO_SPECULAR
+            bsdf.inputs['Coat Weight'].default_value = PHOTO_COAT[0]; bsdf.inputs['Coat Roughness'].default_value = PHOTO_COAT[1]
             bsdf.inputs['Coat IOR'].default_value = 1.5
-            changes['photo_faces'] += 1
-            for n in m.node_tree.nodes:
+            rec['specular_ior_level'] = PHOTO_SPECULAR; rec['coat'] = {'weight': PHOTO_COAT[0], 'roughness': PHOTO_COAT[1], 'ior': 1.5}
+            for n in nt.nodes:
                 if n.type == 'TEX_IMAGE': n.interpolation = 'Cubic'
-        elif metal >= 0.5:
-            bsdf.inputs['Metallic'].default_value = 1.0          # three.js partial metalness is a look, not a material; Cycles wants a real conductor
-            bsdf.inputs['Roughness'].default_value = min(0.6, max(0.18, bsdf.inputs['Roughness'].default_value))
-            changes['metals'] += 1
+            rec['texture_interpolation'] = 'Cubic'
+            summary['photo_faces'] += 1
+        elif metal_s.links or rough_s.links:
+            # an untextured material with a linked scalar socket: nothing in the current exporter does this; leave it and say so
+            rec = {'class': 'untouched', 'note': 'linked Roughness/Metallic on a plain material: left as exported'}
+            summary['untouched'] += 1
+        elif metal_s.default_value >= 0.5:
+            col = bsdf.inputs['Base Color'].default_value[:3]; chroma = max(col) - min(col)
+            gold = chroma >= NEUTRAL_CHROMA
+            floor = METAL_FLOOR_GOLD if gold else METAL_FLOOR_NEUTRAL
+            r0 = rough_s.default_value; r1 = min(METAL_CEIL, max(floor, r0)); m0 = metal_s.default_value
+            metal_s.default_value = 1.0                      # three.js partial metalness is a look, not a material; Cycles wants a real conductor
+            rough_s.default_value = r1
+            rec = {'class': 'gold conductor (pins, contacts)' if gold else 'neutral conductor (shells, shields, pads, leads)',
+                   'metallic': f'{m0:.2f} -> 1.00 (forced conductor)',
+                   'roughness': f'{r0:.2f} -> {r1:.2f}' + (' (floor)' if r1 > r0 + 1e-6 else ' (kept)'),
+                   'base_color_linear': [round(c, 3) for c in col], 'chroma': round(chroma, 3)}
+            summary['metals_gold' if gold else 'metals_neutral'] += 1
         else:
             bsdf.inputs['Specular IOR Level'].default_value = 0.45
-            if bsdf.inputs['Roughness'].default_value <= 0.5:     # glossier moulded plastics (connector housings): a faint coat
-                bsdf.inputs['Coat Weight'].default_value = 0.15
-                bsdf.inputs['Coat Roughness'].default_value = 0.25
-            changes['plastics'] += 1
-    return changes
+            rec = {'class': 'plastic / dielectric' + (f' (partial metalness {metal_s.default_value:.2f} kept)' if metal_s.default_value > 0 else ''),
+                   'specular_ior_level': 0.45, 'roughness': f'{rough_s.default_value:.2f} (kept)'}
+            if rough_s.default_value <= 0.5:                   # glossier moulded plastics (connector housings): a faint coat
+                bsdf.inputs['Coat Weight'].default_value = 0.15; bsdf.inputs['Coat Roughness'].default_value = 0.25
+                rec['coat'] = {'weight': 0.15, 'roughness': 0.25}
+            summary['plastics'] += 1
+        per_material[m.name] = rec
+    summary['look'] = {'photo_specular_ior_level': PHOTO_SPECULAR, 'photo_coat': {'weight': PHOTO_COAT[0], 'roughness': PHOTO_COAT[1]},
+                       'photo_roughness_scale': photo_rough_scale, 'photo_metal_f0_gain': photo_metal_f0,
+                       'metal_roughness_floor_neutral': METAL_FLOOR_NEUTRAL, 'metal_roughness_floor_gold': METAL_FLOOR_GOLD, 'metal_roughness_ceiling': METAL_CEIL,
+                       'note': 'render choices, not measured material properties; the neutral-metal floor is a chosen matte look (gallery-1 shows dull shields), '
+                               'the metal F0 gain mirrors the viewer\'s ASSUMED PHOTO_METAL_F0'}
+    return {'summary': summary, 'per_material': per_material}
 
 
 def add_area(name, loc, target, size, power, color, shape='SQUARE', size_y=None):
@@ -337,6 +422,15 @@ def srgb_to_lum(rgb255):
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
+def per_patch_stops(meas):
+    """Per-patch render-vs-photo luminance difference in stops (the exposure match equalises only the MEAN of the patches)."""
+    out = {}
+    for k, m in meas.items():
+        if m: out[k] = round(math.log2(max(srgb_to_lum(m['mean_sRGB']), 1e-6) / srgb_to_lum(PHOTO_MEANS_SRGB[k])), 3)
+        else: out[k] = None
+    return out
+
+
 def disclosure_from_index():
     try:
         html = open(os.path.join(ROOT, 'index.html'), encoding='utf-8').read()
@@ -348,11 +442,24 @@ def disclosure_from_index():
         return DISCLOSURE_FALLBACK
 
 
-def git_commit():
+def _git(*a):
     try:
-        return subprocess.run(['git', '-C', ROOT, 'rev-parse', 'HEAD'], capture_output=True, text=True, timeout=10).stdout.strip() or None
+        r = subprocess.run(['git', '-C', ROOT, *a], capture_output=True, text=True, timeout=10)
+        return r.stdout.rstrip('\n') if r.returncode == 0 else None        # rstrip only: porcelain lines start with a status column that may be a space
     except Exception:
         return None
+
+
+def git_info():
+    """HEAD, whether tracked files differ from it (the GLB may then not match the commit), and the blob hash of render.py as run
+    (HEAD does not pin the script when it has uncommitted edits)."""
+    head = (_git('rev-parse', 'HEAD') or '').strip() or None
+    status = _git('status', '--porcelain', '--untracked-files=no')
+    dirty_files = [l[3:] for l in status.splitlines() if len(l) > 3] if status is not None else None
+    blob = (_git('hash-object', os.path.join(HERE, 'render.py')) or '').strip() or None
+    return {'model_commit': head, 'dirty': (bool(dirty_files) if dirty_files is not None else None),
+            'dirty_files': (dirty_files[:40] if dirty_files else []), 'render_py_blob': blob,
+            'render_py_sha256': sha256(os.path.join(HERE, 'render.py'))}
 
 
 def sha256(path):
@@ -362,25 +469,62 @@ def sha256(path):
     return h.hexdigest()
 
 
+# --- exposure store -----------------------------------------------------------------------------------------------------------
+def load_exposures(path):
+    if not os.path.exists(path): return {}
+    try: return json.load(open(path))
+    except (OSError, ValueError): return {}
+
+
+def resolve_exposure(args, stored, key, glb_sha, exposure_file):
+    """The stored exposure is only valid for the GLB it was calibrated against (the mask's albedo, the maps and the geometry all move
+    it). Returns (exposure, source record). Refuses a stale entry unless --exposure or --allow-stale-exposure is given."""
+    if args.exposure is not None:
+        return args.exposure, {'source': 'command line (--exposure)', 'exposure_stops': round(args.exposure, 3)}
+    entry = stored.get(key)
+    if not entry:
+        log(f'WARNING: no exposure for "{key}" in {exposure_file}; rendering at 0 stops. Run --match-photo first.')
+        return 0.0, {'source': f'none ({key} not in exposure.json), 0 stops', 'exposure_stops': 0.0}
+    cal_sha = entry.get('glb_sha256')
+    rec = {'source': f'exposure.json [{key}]', 'exposure_stops': entry['exposure'], 'calibrated_for_glb_sha256': cal_sha,
+           'calibrated_for_model_commit': entry.get('model_commit'), 'calibrated_at': entry.get('calibrated_at')}
+    if cal_sha is None:
+        log(f'WARNING: exposure.json [{key}] is not pinned to a GLB (no glb_sha256); re-run --match-photo to pin it')
+        rec['stale'] = 'unknown (entry not pinned)'
+    elif cal_sha != glb_sha:
+        msg = (f'exposure.json [{key}] was calibrated for GLB sha256 {cal_sha[:12]}..., but the GLB being rendered is {glb_sha[:12]}... '
+               f'The stored exposure {entry["exposure"]:+.3f} is not valid for it.')
+        if not args.allow_stale_exposure:
+            raise SystemExit('[render] REFUSED: ' + msg + ' Run --match-photo (per studio) to recalibrate, pass --exposure explicitly, or --allow-stale-exposure to render anyway with a warning in the sidecar.')
+        log('WARNING: ' + msg + ' Rendering anyway (--allow-stale-exposure).')
+        rec['stale'] = True
+    else:
+        rec['stale'] = False
+    return entry['exposure'], rec
+
+
 # --- main -------------------------------------------------------------------------------------------------------------------
-def build(args, w, h):
+def build(args, view, studio_name, w, h):
     sc = clean_scene()
     root, by_board = import_glb(os.path.abspath(args.glb))
-    mat_changes = tune_materials()
+    mats = tune_materials(args.photo_rough_scale, args.photo_metal_f0)
     pts = board_points(by_board)
     lo = mathutils.Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
     hi = mathutils.Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
     centre = (lo + hi) / 2; centre.z = 0
     extent = math.hypot(hi.x - lo.x, hi.y - lo.y)
-    if args.view in VIEWS: az, el, fill = VIEWS[args.view]
+    if view in VIEWS: az, el, fill = VIEWS[view]
     else: az, el, fill = args.az, args.el, args.fill
-    studio = build_studio(centre, extent, args.studio, ground=el >= 0)
+    studio = build_studio(centre, extent, studio_name, ground=el >= 0)
     frame = frame_for(pts, dir_from_az_el(az, el), fill, w / h)
     cam = make_camera(frame, w / h)
-    info = {'kit_bbox_m': {'min': [round(v, 5) for v in lo], 'max': [round(v, 5) for v in hi]}, 'materials_tuned': mat_changes,
-            'view': {'name': args.view, 'az': az, 'el': el, 'fill': fill, 'fov_vertical_deg': FOV_V,
-                     'camera_pos_m': [round(v, 5) for v in frame['pos']], 'target_m': [round(v, 5) for v in frame['target']], 'distance_m': round(frame['dist'], 5)},
-            'studio': {'preset': args.studio, **studio}}
+    info = {'kit_bbox_m': {'min': [round(v, 5) for v in lo], 'max': [round(v, 5) for v in hi]},
+            'materials_tuned': mats['summary'], 'materials': mats['per_material'],
+            'view': {'name': view, 'az': az, 'el': el, 'fill': fill, 'fov_vertical_deg': FOV_V,
+                     'camera_pos_m': [round(v, 5) for v in frame['pos']], 'target_m': [round(v, 5) for v in frame['target']], 'distance_m': round(frame['dist'], 5),
+                     'note': 'same az/el, vertical fov, fill and bounding-box fit rule as the viewer presets (src/main.js VIEWS / frameFor, ported); '
+                             'tools/blender/viewer-camera.mjs prints the viewer\'s own camera for the same aspect to compare'},
+            'studio': {'preset': studio_name, **studio}}
     return sc, cam, info
 
 
@@ -390,79 +534,122 @@ def render_once(sc, out_path):
     return dt
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--glb', default=os.path.join(ROOT, 'assets', 'unijack.glb'))
-    ap.add_argument('--view', default='hero', help='hero|top|low|side|under|custom (custom uses --az --el --fill)')
-    ap.add_argument('--az', type=float, default=32); ap.add_argument('--el', type=float, default=34); ap.add_argument('--fill', type=float, default=0.9)
-    ap.add_argument('--out', default=None, help='output PNG (default renders/<view>.png); a sidecar .json is written next to it')
-    ap.add_argument('--samples', type=int, default=128); ap.add_argument('--size', default='1920x1080')
-    ap.add_argument('--studio', default='dark', choices=['dark', 'white'])
-    ap.add_argument('--exposure', type=float, default=None, help='view exposure in stops; default: tools/blender/exposure.json for this studio, else 0')
-    ap.add_argument('--view-transform', default='AgX', choices=['AgX', 'Filmic', 'Standard'])
-    ap.add_argument('--look', default='AgX - Base Contrast', help="view look, e.g. 'AgX - Base Contrast', 'AgX - Punchy', 'None'")
-    ap.add_argument('--no-denoise', action='store_true'); ap.add_argument('--time-limit', type=float, default=0, help='seconds per frame, 0 = none')
-    ap.add_argument('--match-photo', action='store_true', help='iterate the exposure until the plain solder mask matches gallery-1.jpg, then write exposure.json')
-    ap.add_argument('--match-size', default='960x540'); ap.add_argument('--match-samples', type=int, default=32)
-    args = ap.parse_args()
-    w, h = (int(v) for v in args.size.lower().split('x'))
-    exposure_file = os.path.join(HERE, 'exposure.json')
-    key = f'{args.studio}/{args.view_transform}/{args.look}'
-    stored = {}
-    if os.path.exists(exposure_file):
-        try: stored = json.load(open(exposure_file))
-        except (OSError, ValueError): stored = {}
-
-    if args.match_photo:
-        mw, mh = (int(v) for v in args.match_size.lower().split('x'))
-        sc, cam, info = build(args, mw, mh)
-        exposure = args.exposure if args.exposure is not None else stored.get(key, {}).get('exposure', 0.0)
-        target = np.mean([srgb_to_lum(v) for v in PHOTO_MEANS_SRGB.values()])
-        tmp = os.path.join(ROOT, 'renders', f'_match-{args.studio}.png'); os.makedirs(os.path.dirname(tmp), exist_ok=True)
-        history = []
-        for it in range(4):
-            setup_render(sc, mw, mh, args.match_samples, exposure, args.view_transform, not args.no_denoise, 0, args.look)
-            dt = render_once(sc, tmp)
-            meas = measure_patches(sc, cam, tmp)
-            got = [srgb_to_lum(m['mean_sRGB']) for m in meas.values() if m]
-            if not got: raise SystemExit('no patch visible in the calibration view; use --view hero')
-            lum = float(np.mean(got)); step = math.log2(target / max(lum, 1e-6))
-            history.append({'iteration': it, 'exposure': round(exposure, 3), 'render_patches': meas, 'render_lum': round(lum, 5), 'photo_lum': round(float(target), 5), 'step_stops': round(step, 3), 'seconds': round(dt, 1)})
-            log(f'match {it}: exposure={exposure:+.3f} render lum={lum:.4f} photo lum={target:.4f} -> step {step:+.3f} stops ({dt:.1f}s)')
-            if abs(step) < 0.02: break
-            exposure += step * 0.9
-        stored[key] = {'exposure': round(exposure, 3), 'view_transform': args.view_transform, 'look': args.look, 'photo_patches_sRGB': PHOTO_MEANS_SRGB,
-                              'render_patches_sRGB': {k: (m['mean_sRGB'] if m else None) for k, m in meas.items()}, 'history': history,
-                              'method': 'mean luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at ' + args.match_size + ' with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg'}
-        json.dump(stored, open(exposure_file, 'w'), indent=2)
-        log(f'wrote {exposure_file}: {key} exposure {exposure:+.3f}')
-        return
-
-    sc, cam, info = build(args, w, h)
+def match_photo(args, studio_name, stored, exposure_file, glb_sha, git):
+    """Iterate the view exposure until the MEAN Rec.709 luminance of the two plain-mask patches equals the photo's, then store it pinned to the GLB."""
+    key = f'{studio_name}/{args.view_transform}/{args.look}'
+    mw, mh = (int(v) for v in args.match_size.lower().split('x'))
+    sc, cam, info = build(args, 'hero', studio_name, mw, mh)
     exposure = args.exposure if args.exposure is not None else stored.get(key, {}).get('exposure', 0.0)
-    setup_render(sc, w, h, args.samples, exposure, args.view_transform, not args.no_denoise, args.time_limit, args.look)
-    out = os.path.abspath(args.out or os.path.join(ROOT, 'renders', f'{args.view}.png')); os.makedirs(os.path.dirname(out), exist_ok=True)
-    log(f'rendering {args.view} {w}x{h} samples={args.samples} exposure={exposure:+.3f} {args.view_transform} denoise={not args.no_denoise} -> {out}')
+    target = np.mean([srgb_to_lum(v) for v in PHOTO_MEANS_SRGB.values()])
+    tmp = os.path.join(args.out_dir, f'_match-{studio_name}.png'); os.makedirs(os.path.dirname(tmp), exist_ok=True)
+    history = []; meas = {}
+    for it in range(4):
+        setup_render(sc, mw, mh, args.match_samples, exposure, args.view_transform, not args.no_denoise, 0, args.look)
+        dt = render_once(sc, tmp)
+        meas = measure_patches(sc, cam, tmp)
+        got = [srgb_to_lum(m['mean_sRGB']) for m in meas.values() if m]
+        if not got: raise SystemExit('no patch visible in the calibration view')
+        lum = float(np.mean(got)); step = math.log2(target / max(lum, 1e-6))
+        history.append({'iteration': it, 'exposure': round(exposure, 3), 'render_patches': meas, 'render_lum': round(lum, 5), 'photo_lum': round(float(target), 5), 'step_stops': round(step, 3), 'seconds': round(dt, 1)})
+        log(f'match {studio_name} {it}: exposure={exposure:+.3f} render lum={lum:.4f} photo lum={target:.4f} -> step {step:+.3f} stops ({dt:.1f}s)')
+        if abs(step) < 0.02: break
+        exposure += step * 0.9
+    stored[key] = {'exposure': round(exposure, 3), 'view_transform': args.view_transform, 'look': args.look,
+                   'glb_sha256': glb_sha, 'glb': os.path.relpath(os.path.abspath(args.glb), ROOT), 'model_commit': git['model_commit'], 'model_dirty': git['dirty'],
+                   'render_py_blob': git['render_py_blob'], 'calibrated_at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'match_size': args.match_size, 'match_samples': args.match_samples,
+                   'photo_patches_sRGB': PHOTO_MEANS_SRGB, 'render_patches_sRGB': {k: (m['mean_sRGB'] if m else None) for k, m in meas.items()},
+                   'per_patch_stops_vs_photo': per_patch_stops(meas), 'history': history,
+                   'method': 'MEAN luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at ' + args.match_size + ' with the hero camera, vs the same physical '
+                             'patches in source-photos/gallery-1.jpg. Mean-only: the two patches individually differ from the photo in opposite directions (per_patch_stops_vs_photo). '
+                             'Valid only for the GLB named by glb_sha256.'}
+    os.makedirs(os.path.dirname(os.path.abspath(exposure_file)), exist_ok=True)
+    json.dump(stored, open(exposure_file, 'w'), indent=2)
+    log(f'wrote {exposure_file}: {key} exposure {exposure:+.3f} (pinned to GLB {glb_sha[:12]}...)')
+
+
+def render_frame(args, view, studio_name, out, samples, stored, exposure_file, glb_sha, git):
+    key = f'{studio_name}/{args.view_transform}/{args.look}'
+    exposure, exposure_src = resolve_exposure(args, stored, key, glb_sha, exposure_file)
+    w, h = (int(v) for v in args.size.lower().split('x'))
+    sc, cam, info = build(args, view, studio_name, w, h)
+    setup_render(sc, w, h, samples, exposure, args.view_transform, not args.no_denoise, args.time_limit, args.look)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    log(f'rendering {view} ({studio_name}) {w}x{h} samples={samples} exposure={exposure:+.3f} {args.view_transform} denoise={not args.no_denoise} -> {out}')
     dt = render_once(sc, out)
     meas = measure_patches(sc, cam, out)
     log(f'done in {dt:.1f}s; patches: ' + ', '.join(f"{k}={m['mean_sRGB'] if m else 'off-frame'}" for k, m in meas.items()))
     sidecar = {
         'render': os.path.basename(out), 'size': [w, h], 'rendered_at': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'seconds': round(dt, 1),
-        'engine': {'blender': bpy.app.version_string, 'renderer': 'Cycles CPU', 'samples_max': args.samples, 'adaptive_threshold': 0.01,
+        'engine': {'blender': bpy.app.version_string, 'renderer': 'Cycles CPU', 'samples_max': samples, 'adaptive_threshold': 0.01,
                    'denoiser': ('OpenImageDenoise RGB+albedo+normal' if sc.cycles.use_denoising else 'none'), 'view_transform': args.view_transform, 'look': args.look,
-                   'exposure_stops': round(exposure, 3), 'threads': os.cpu_count()},
-        'model': {'glb': os.path.relpath(os.path.abspath(args.glb), ROOT), 'glb_sha256': sha256(args.glb), 'glb_bytes': os.path.getsize(args.glb),
-                  'model_commit': git_commit(), 'exporter': 'tools/export-glb.mjs (src/export.js)'},
+                   'exposure_stops': round(exposure, 3), 'exposure': exposure_src, 'threads': os.cpu_count()},
+        'model': {'glb': os.path.relpath(os.path.abspath(args.glb), ROOT), 'glb_sha256': glb_sha, 'glb_bytes': os.path.getsize(args.glb),
+                  **git, 'exporter': 'tools/export-glb.mjs (src/export.js)',
+                  'note': 'model_commit is HEAD of the checkout; dirty=true means tracked files differed from it when this was rendered, so the GLB may not '
+                          'correspond to that commit. render_py_blob is the git blob hash of tools/blender/render.py as run.'},
         **info,
-        'colour_match': {'method': 'exposure matched so plain solder-mask patches have the mean luminance of the same patches in gallery-1.jpg',
+        'colour_match': {'method': 'exposure matched so the MEAN luminance of two plain solder-mask patches equals the mean of the same patches in gallery-1.jpg (mean-only; the patches '
+                                   'individually differ in opposite directions, see per_patch_stops_vs_photo). Hue is not matched: the rendered mask reads lighter and less saturated than the photo.',
                          'valid_for': 'the hero view only: in other views the patches are foreshortened or occluded and their numbers below mean nothing',
-                         'photo_patches_sRGB': PHOTO_MEANS_SRGB, 'render_patches_sRGB': meas},
+                         'photo_patches_sRGB': PHOTO_MEANS_SRGB, 'render_patches_sRGB': meas, 'per_patch_stops_vs_photo': per_patch_stops(meas)},
         'synthetic': 'Lighting (three area lights), world gradient, ground plane, camera, material gloss/coat and the denoiser are synthetic studio choices made for this render. They are not the lighting of the photographs.',
         'disclosure': disclosure_from_index(),
         'status_note': 'Illustrative, photo-anchored, NOT CAD. Board tops are the real gallery photographs; part heights, stack height, PCB thickness and colours of plastics and metals are assumed. Nothing here is a vendor-supplied mechanical specification or an independently verified capability.',
     }
-    json.dump(sidecar, open(out[:-4] + '.json' if out.lower().endswith('.png') else out + '.json', 'w'), indent=2)
-    log(f'wrote sidecar for {out}')
+    side = out[:-4] + '.json' if out.lower().endswith('.png') else out + '.json'
+    json.dump(sidecar, open(side, 'w'), indent=2)
+    log(f'wrote sidecar {side}')
+    return sidecar
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--glb', default=os.path.join(ROOT, 'assets', 'unijack.glb'))
+    ap.add_argument('--view', default='hero', help='hero|top|low|side|under|custom (custom uses --az --el --fill)')
+    ap.add_argument('--all', action='store_true', help='render the six library frames in sequence: hero, low, top, side, under (dark studio) and hero-white (white studio) into --out-dir')
+    ap.add_argument('--az', type=float, default=32); ap.add_argument('--el', type=float, default=34); ap.add_argument('--fill', type=float, default=0.9)
+    ap.add_argument('--out', default=None, help='output PNG (default <out-dir>/<view>.png); a sidecar .json is written next to it')
+    ap.add_argument('--out-dir', default=os.path.join(ROOT, 'renders'), help='directory for --all and for the default --out (default renders/)')
+    ap.add_argument('--samples', type=int, default=128, help='adaptive max samples per pixel (with --all: every frame but hero)')
+    ap.add_argument('--hero-samples', type=int, default=192, help='with --all: samples for the dark-studio hero frame')
+    ap.add_argument('--size', default='1920x1080')
+    ap.add_argument('--studio', default='dark', choices=['dark', 'white'])
+    ap.add_argument('--exposure', type=float, default=None, help='view exposure in stops; default: the exposure.json entry for this studio, which must have been calibrated for this GLB')
+    ap.add_argument('--exposure-file', default=os.path.join(HERE, 'exposure.json'), help='where --match-photo writes and renders read the calibrated exposure')
+    ap.add_argument('--allow-stale-exposure', action='store_true', help='render with an exposure.json entry calibrated for a different GLB (warning in the sidecar) instead of refusing')
+    ap.add_argument('--view-transform', default='AgX', choices=['AgX', 'Filmic', 'Standard'])
+    ap.add_argument('--look', default='AgX - Base Contrast', help="view look, e.g. 'AgX - Base Contrast', 'AgX - Punchy', 'None'")
+    ap.add_argument('--no-denoise', action='store_true'); ap.add_argument('--time-limit', type=float, default=0, help='seconds per frame, 0 = none')
+    ap.add_argument('--photo-rough-scale', type=float, default=1.0, help='multiply the photo faces\' roughness map through a node (1 = the GLB\'s photo-derived map as is)')
+    ap.add_argument('--photo-metal-f0', type=float, default=1.5, help='base colour gain of metal pixels on the photo faces (the viewer\'s ASSUMED PHOTO_METAL_F0; 1 = the plain photo colour)')
+    ap.add_argument('--match-photo', action='store_true', help='iterate the exposure until the plain solder mask matches gallery-1.jpg, then write it to --exposure-file pinned to the GLB '
+                                                             '(with --all: calibrate both studios first, then render)')
+    ap.add_argument('--match-size', default='960x540'); ap.add_argument('--match-samples', type=int, default=32)
+    args = ap.parse_args()
+    if not os.path.exists(args.glb): raise SystemExit(f'[render] GLB not found: {args.glb} (run `node tools/export-glb.mjs`)')
+    glb_sha = sha256(args.glb)
+    git = git_info()
+    if git['dirty']: log(f'NOTE: working tree has uncommitted changes in {len(git["dirty_files"])} tracked file(s); the sidecar says dirty=true')
+    stored = load_exposures(args.exposure_file)
+
+    if args.match_photo:
+        for studio_name in (['dark', 'white'] if args.all else [args.studio]):
+            match_photo(args, studio_name, stored, args.exposure_file, glb_sha, git)
+            stored = load_exposures(args.exposure_file)
+        if not args.all: return
+
+    if args.all:
+        t0 = time.time(); done = []
+        for view, studio_name, name in LIBRARY:
+            out = os.path.abspath(os.path.join(args.out_dir, f'{name}.png'))
+            samples = args.hero_samples if (view == 'hero' and studio_name == 'dark') else args.samples
+            sc = render_frame(args, view, studio_name, out, samples, stored, args.exposure_file, glb_sha, git)
+            done.append((name, sc['seconds']))
+        log('library batch done in %.0fs: ' % (time.time() - t0) + ', '.join(f'{n} {s:.0f}s' for n, s in done))
+        return
+
+    out = os.path.abspath(args.out or os.path.join(args.out_dir, f'{args.view}.png'))
+    render_frame(args, args.view, args.studio, out, args.samples, stored, args.exposure_file, glb_sha, git)
 
 
 if __name__ == '__main__':

@@ -11,28 +11,35 @@ everything about the light is a synthetic studio. See "What is synthetic" below.
 ## Run
 
 ```
-python3 -m venv venv-bpy && venv-bpy/bin/pip install bpy==4.5.14 numpy      # once; ~300 MB wheel, needs glibc Linux x86_64 or macOS
+python3 -m venv venv-bpy && venv-bpy/bin/pip install bpy==4.5.14 numpy      # once; ~300 MB wheel, needs glibc Linux x86_64 or macOS (venv-bpy/ is git-ignored)
 node tools/export-glb.mjs                                                   # writes assets/unijack.glb (from unijack-3d/)
-venv-bpy/bin/python -I tools/blender/render.py --match-photo                # once per studio: calibrates exposure, writes tools/blender/exposure.json
-venv-bpy/bin/python -I tools/blender/render.py --view hero --samples 192 --size 1920x1080 --out renders/hero.png
+venv-bpy/bin/python -I tools/blender/render.py --all --match-photo          # calibrate both studios for THIS GLB, then render the six library frames (1080p)
+venv-bpy/bin/python -I tools/blender/render.py --view hero --samples 192 --size 1920x1080 --out renders/hero.png   # one frame
 ```
 
 Options: `--view hero|top|low|side|under|custom` (`custom` takes `--az --el --fill`; `under` and any negative elevation render without the
-ground plane, since the camera is below it), `--size WxH`, `--samples N` (adaptive, max per pixel),
+ground plane, since the camera is below it), `--all` (the six library frames `hero`, `low`, `top`, `side`, `under` in the dark studio and
+`hero-white` in the white one, in sequence into `--out-dir`, default `renders/`; `--hero-samples`, default 192, for the dark hero frame and
+`--samples`, default 128, for the rest), `--size WxH`, `--samples N` (adaptive, max per pixel),
 `--studio dark|white` (dark satin stage, or a white sweep like the gallery photos' background), `--exposure` (stops; default from
-`exposure.json`), `--view-transform AgX|Filmic|Standard`, `--look 'AgX - Base Contrast'|'AgX - Punchy'|None`, `--no-denoise`, `--time-limit`
-(seconds per frame), `--match-photo` (see Calibration). `--out` defaults to `renders/<view>.png`.
+`exposure.json`, see Calibration), `--exposure-file` (another store, e.g. for tests), `--allow-stale-exposure`, `--view-transform AgX|Filmic|Standard`,
+`--look 'AgX - Base Contrast'|'AgX - Punchy'|None`, `--no-denoise`, `--time-limit` (seconds per frame), `--photo-rough-scale` and
+`--photo-metal-f0` (material look, see below), `--match-photo` (see Calibration). `--out` defaults to `<out-dir>/<view>.png`.
 
-Cameras reproduce the viewer presets exactly: `src/main.js` `VIEWS` (hero az 32 el 34, top 0/89, low 18/11, side 90/7, under 28/-34),
-its `dirFromAzEl` convention, the 32 degree vertical fov and the same bounding-box fit (`frameFor`, ported line for line) for the render's
-aspect. The glTF importer converts the file to Z-up (Blender x = model x, y = -model z, z = model y); the kit is scaled to metres so light
-powers are ordinary watts.
+Cameras use the viewer's presets: `src/main.js` `VIEWS` (hero az 32 el 34, top 0/89, low 18/11, side 90/7, under 28/-34), its
+`dirFromAzEl` convention, the 32 degree vertical fov and the same bounding-box fit rule (`frameFor`, ported) for the render's aspect.
+This is checked numerically, not by eye: `node tools/blender/viewer-camera.mjs --size=1920x1080 --sidecar=renders/hero.json,...` asks the
+running viewer for its own camera at that aspect and diffs it against the sidecars; on the five 1080p frames of 2026-10-11 the camera position,
+target and distance agree to within 0.006 mm for every preset (the residual is the sidecar's 5-decimal rounding). The glTF importer converts
+the file to Z-up (Blender x = model x, y = -model z, z = model y); the kit is scaled to metres so light powers are ordinary watts.
 
 ## Timings (4 CPU cores, no GPU, OpenImageDenoise on, adaptive sampling)
 
 Measured wall times of `bpy.ops.render.render` (`seconds` in each sidecar); the whole process adds about 5 s for import, material setup
 and the sidecar. The container's speed varied by more than 3x between sessions (the same 640 x 360 / 48-sample hero frame took 11 s in one
 session and 38 s in the next, and the 1080p low frame 153 s once and 362 s the time before), so take the ranges, not single numbers.
+These were measured on the pre-integration GLB (no roughness/metalness/normal maps, sha `023194b7...`); the integrated GLB adds three
+texture lookups per photo face and should not change them by much, but the 1080p batch has not been re-timed on it yet.
 
 | frame | view | samples | render time |
 |---|---|---|---|
@@ -45,46 +52,63 @@ session and 38 s in the next, and the 1080p low frame 153 s once and 362 s the t
 | 1920 x 1080 | under (no ground, underfill light) | 128 | 103 s (1.7 min, mostly empty frame); `renders/under.json` |
 | 1920 x 1080 | hero (white studio) | 128 | 292 s (4.9 min); `renders/hero-white.json` |
 | 960 x 540 x 4 iterations | `--match-photo` | 32 | about 2 min per studio (dark: 4 x 31 s; white: 4 x 20 s) |
+| 320 x 180, six frames + both calibrations | `--all --match-photo` smoke test (8-12 samples) | | 38 s wall on the integrated GLB (code-path test, not a picture) |
 | 3840 x 2160 | hero | 192 | **estimate, not rendered**: 4 x the 1080p time, 27 - 35 min on this machine |
 
 Scene build (import + BVH + light tree) is under 2 s; time is almost all path tracing and scales with pixel count. Memory peak about 460 MB.
-Run long frames detached (`nohup ... &`) and poll for the sidecar; a 1080p batch of five views is 20 - 40 minutes here.
+Run long frames detached (`nohup ... &`) and poll for the sidecar; a 1080p batch of six views is 25 - 45 minutes here.
 
-## Calibration (`--match-photo`)
+## Calibration (`--match-photo`) and what it does not achieve
 
 Exposure is matched to the photograph, not guessed: two plain solder-mask patches on the base board (texture px 230-270 x 300-325 and
 198-235 x 302-330 of `assets/tex/base-top.webp`, inside and left-below the silkscreen rectangle left of the SO-DIMM socket) are projected
 through the hero camera and their mean colour is read back from a 960x540 test render; the same physical patches were measured in
 `source-photos/gallery-1.jpg` (3000x1688 px boxes 800,790-940,835 and 690,855-780,915: mean sRGB 12/151/189 and 4/132/170, measured with
-PIL). The view exposure is iterated until the Rec.709 luminance of the rendered patches equals the photo's (within 0.02 stops); the result
-and the full history are written to `exposure.json` per studio / view transform / look, and every render's sidecar repeats the measurement
-for that frame.
+PIL). The view exposure is iterated until the **mean** Rec.709 luminance of the two rendered patches equals the photo's mean (within 0.02 stops);
+the result and the full history are written to `exposure.json` per studio / view transform / look, **pinned to the sha256 of the GLB it was
+calibrated against** (the mask albedo, the finish maps and the geometry all move it). A render whose GLB has a different sha256 is refused
+unless you pass `--exposure` yourself or `--allow-stale-exposure` (the sidecar then says `exposure.stale: true`); after every re-export, run
+`--match-photo` again (`--all --match-photo` does both studios first, then renders). Every render's sidecar repeats the measurement for its
+own frame.
 
-What this does and does not achieve: luminance matches (render 0.230 vs photo 0.227 at the last calibration). Hue does not fully: the
-rendered mask reads lighter and less saturated than the photo (about sRGB 45/136/168 against 12/151/189 for patch A). The red lift is
-specular sheen from the studio lights and world reflected in the glossy mask plus AgX's desaturation of saturated teal; the texture itself
-is a deep 3/92/123 there. Reducing the mask gloss (roughness 0.5, specular 0.3, coat 0.08) and moving the rim light out of the hero camera's
-mirror direction helped; a true match would need the photo's own light (a large neutral source with a white sweep), which `--studio white`
-approximates at the cost of more sheen. Treat colour in these renders as approximate, exactly as the viewer's README already says. The white studio (`hero-white.png`, exposure
--0.868 after its own calibration) gets closer in hue (patch A sRGB 61/134/164) because its brighter, more even world fills the mask's
-sheen with white instead of dark grey; the dark studio is the one that reads lighter and greyer.
+What this achieves, and what it does not, measured on the 1080p frames of 2026-10-11 (pre-integration GLB; the numbers for the integrated
+GLB will be in the new sidecars):
 
-## What the 1080p frames look like against `gallery-1.jpg` (checked region by region)
+* **Mean luminance matches, locally it does not.** The match is mean-only: render 0.231 vs photo 0.227 (+0.03 stops) for the two patches
+  together, but in the photo patch A is brighter than B (0.258 vs 0.196, A is nearer the photographer's light) while in the render B is
+  brighter than A (0.254 vs 0.209). The two patches are off by about 0.3 stops each in opposite directions (A -0.3, B +0.4); the studio's
+  illumination gradient across that corner of the board runs the other way from the photograph's. The sidecar reports both
+  (`colour_match.per_patch_stops_vs_photo`).
+* **Hue and saturation do not match in either studio, and the dark studio is the nearer one.** Patch A: photo sRGB 12/151/189 (HSV hue 193,
+  saturation 0.94), dark studio 43/136/168 (hue 195, sat 0.74, RGB distance 40), white studio 61/135/164 (hue 197, sat 0.63, distance 57).
+  Both render the mask lighter and less saturated than the photograph; the white studio is the paler and greyer of the two, because its
+  bright, even world fills the mask's specular sheen with white. (An earlier version of this file said the opposite; it was wrong, the
+  numbers above are the measurement.) The red lift is the studio lights and world reflected in the glossy mask plus AgX's desaturation of
+  saturated teal; the texture itself is a deep 3/92/123 there. A true match would need the photo's own light (a large neutral source with
+  a white sweep) and a mask whose gloss is measured, not chosen. Treat colour in these renders as approximate, exactly as the viewer's README
+  already says, and prefer the dark studio when a single library default is wanted for colour fidelity.
 
-* **Highlights**: no clipping. 0 pixels at or above sRGB 254 in `hero.png` and `low.png` (the photograph itself is 48 % pure white, its
-  cut-out background). Metal tops (RJ45, USB-A shields) peak around 224.
-* **Solder mask / pads**: luminance matches by construction; hue is lighter and less saturated than the photo (see Calibration). Pads,
+## What the 1080p frames look like against `gallery-1.jpg` (checked region by region, 2026-10-11 frames)
+
+* **Highlights**: no clipping. 0 pixels at or above sRGB 254 in any of the six frames (the photograph itself is 48 % pure white, its
+  cut-out background). Metal tops peaked around 224 to 244.
+* **Solder mask / pads**: mean luminance matches by construction; hue is lighter and less saturated than the photo (see Calibration). Pads,
   LEDs and the silkscreen are the photo's own pixels, relit.
 * **Mercury module**: the photo's Mercury is a deeper royal blue than the base board; the render keeps that relation but lifts both. The
   TriCore package, the electrolytic and the blue inductor read correctly; the SO-DIMM socket's gold contacts are visible along the edge.
 * **PeriBoard pin headers**: from above (`top.png`) the 2 x 5 headers J1-J16 match the photo's layout and designators pixel for pixel
   (they are the photo). From the hero angle the gold pins stand well above their black bases; the pin length above the housing is an
   assumed height of the model (`src/parts`), not a render choice, and the viewer shows the same.
+* **Shields and shells**: in those frames the RJ45 and USB-A shields rendered as polished chrome (roughness 0.28-0.36) where the photo shows
+  dull, matte shields. The neutral-metal roughness floor is now 0.45 (see "Material look"), so the next batch will show them matte; this is a
+  chosen look nearer the photograph, not a measured finish.
 * **Board edges**: the pale rim along the boards in the `low` and `side` frames is the GLB's `fr4Edge` material (an assumed pale FR4
   colour, roughness 0.72, sRGB about 210 at its brightest in these renders). It reads brighter than the photo's edge because the key light
   grazes it; it is an assumed colour, not a measured one.
-* **Shadows and ground**: soft contact shadows under the base board and the PeriBoard overhang; the dark studio ground is sRGB 60-80,
-  never black, and the backdrop fades from about 8 at the top of frame to a soft horizon band of about 40-50.
+* **Shadows and ground**: soft contact shadows under the base board and the PeriBoard overhang. The dark studio ground is mostly sRGB 60-85
+  (bottom-120-row medians 66-83), never black, with the fill light's reflection on the satin surface rising to about 120-160 near the bottom
+  corners (hero bottom-right about 120, low about 140, side bottom-left about 158). The backdrop fades from about 10-15 at the top of the
+  `low` and `side` frames to a soft horizon band of about 40-50; in `hero` the top of frame is far ground (about 46), not backdrop.
 
 ## What is synthetic (disclose this wherever a render is shown)
 
@@ -97,8 +121,21 @@ sheen with white instead of dark grey; the dark studio is the one that reads lig
   by bounce and the first attempt came out as a black silhouette. The undersides of the base board and PeriBoard are unphotographed and
   carry the model's plain assumed `maskBottom` colour, so `under.png` shows a featureless dark-teal slab with the connector bodies along
   the edges: that is all the model knows.
-* **Material gloss**: the GLB carries flat PBR values. For Cycles the photo-textured faces get a glossy mask look (roughness 0.5, specular 0.3,
-  a thin clear coat), materials with three.js "metalness" of 0.5 or more become true conductors, glossier plastics get a faint coat.
+* **Material look** (`tune_materials`; every material's record is in the sidecar under `materials`, the parameters under `materials_tuned.look`):
+  * *Photo faces* (the four `photo-*` materials): the GLB links Roughness and Metallic to the exporter's photo-derived finish map and Normal to
+    its normal map (see `assets/tex/derived/README.md`; the maps are a colour segmentation of the photographs, not measurements). Those links are
+    **kept**: Cycles ignores a socket's default value while it is linked, so the script never writes one there; `--photo-rough-scale f` (default 1)
+    multiplies the roughness map through a clamped Math node instead, and the sidecar says `map ... (kept)` or `x f (Math node)`. What the script
+    does set on these faces: Specular IOR Level 0.30 and a thin clear coat (weight 0.08, roughness 0.10), the glossy-mask look. Metal pixels of
+    the photo get their base colour times `--photo-metal-f0` (default 1.5, keyed on the metalness map through a Mix node): this mirrors the
+    viewer's **assumed** `PHOTO_METAL_F0` (the photographed grey of a pad is its reflection of the softbox, not its reflectance; the GLB carries
+    the plain photo colour). On a GLB without the maps the old fixed values apply (roughness 0.50) and the sidecar says `no map: set 0.50`.
+  * *Plain metals* (three.js metalness 0.5 or more) become true conductors (metallic 1). Roughness is clamped to [floor, 0.6]: the floor is
+    **0.45 for neutral steel/tin colours** (shells, shields, pads, leads; base-colour chroma below 0.15) and 0.18 for gold-coloured ones (pins,
+    contacts). The 0.45 floor is a **chosen look**: gallery-1 shows dull, matte shields and the earlier 0.18 floor rendered them as chrome. It is
+    not a measured finish, and it makes solder pads matter than the photo's bright reflowed solder.
+  * *Plastics / dielectrics*: Specular IOR Level 0.45; those with roughness 0.5 or below (moulded connector housings) get a faint coat
+    (0.15 / 0.25). Partial metalness below 0.5 is kept as exported.
   These are looks, not measured material properties.
 * **Everything in the viewer's honesty table**: heights, stack height, PCB thickness, plastic/metal colours, detail geometry, undersides.
 * **Camera and post**: 32 degree vertical fov perspective matching the viewer, AgX view transform, exposure calibrated as above, Open Image
@@ -107,11 +144,17 @@ sheen with white instead of dark grey; the dark studio is the one that reads lig
 
 ## Sidecar `.json`
 
-Written next to every PNG: `model.glb_sha256` and `model.model_commit` (git HEAD of the repository the GLB was rendered from), size, samples,
-denoiser, view transform, exposure, every light / world / ground parameter, the camera position, target and fov, the colour measurements,
-the `synthetic` sentence above, the `disclosure` paragraph read from `index.html`'s "About this model" and the project's `status_note`.
-Keep the sidecar with the image when it goes into the asset library. `model_commit` is the HEAD of the checkout the GLB came from; it
-does not pin `render.py` itself, so the sidecar also lists every light, world, ground and material parameter that was used.
+Written next to every PNG: `model.glb_sha256`, `model.model_commit` (git HEAD of the checkout), `model.dirty` plus `dirty_files` (tracked
+files that differed from HEAD when the frame was rendered, so the GLB may not correspond to that commit), `model.render_py_blob` (the git blob
+hash of `render.py` as run, since HEAD does not pin an edited script) and `render_py_sha256`; size, samples, denoiser, view transform, the
+exposure with its source (`exposure.json` entry, the GLB it was calibrated for and whether it is stale, or the command line), every light /
+world / ground parameter, the camera position, target and fov, the per-material record of what `tune_materials` did, the colour
+measurements with per-patch stops, the `synthetic` sentence above, the `disclosure` paragraph read from `index.html`'s "About this model" and
+the project's `status_note`. Keep the sidecar with the image when it goes into the asset library.
+
+`exposure.json` entries carry the same pins (`glb_sha256`, `model_commit`, `render_py_blob`, `calibrated_at`) and the per-patch stops. The two
+entries in the repository were calibrated on the pre-integration GLB `023194b7...` (commit 5450310); they are kept as a record and will be
+refused for any other GLB until `--match-photo` is re-run.
 
 The six library frames are `hero`, `low`, `top`, `side`, `under` (dark studio) and `hero-white`. Anything in `renders/` named `test-*`,
 `*-640-test`, `*-640-check` or `_match-*` is a calibration or smoke-test frame, several of them from earlier light rigs; do not use them.
