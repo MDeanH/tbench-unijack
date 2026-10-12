@@ -3,12 +3,12 @@
     "exposure": -0.589,
     "view_transform": "AgX",
     "look": "AgX - Base Contrast",
-    "glb_sha256": "023194b78a7bf6f2325bbba71c48d25ce0566c0e49c16a8a681300346796c8f6",
+    "glb_sha256": "540b994ef5306dffab68d3de61f9769921fabbd137de2c0bd493691d9efa1b2b",
     "glb": "assets/unijack.glb",
-    "model_commit": "54503102d7b5023cfac464801d697ff78eaf6a15",
-    "model_dirty": null,
-    "render_py_blob": null,
-    "calibrated_at": "2026-10-11 (scout/blender, exposure.json before pinning; GLB sha and commit added afterwards from the 1080p sidecars)",
+    "model_commit": "a4b144e5c916daa29a8f0c773c52f8b6c1fba43f",
+    "model_dirty": false,
+    "render_py_blob": "b7ab68818ab0f316a6afa44b4d224ff0867c8fa5",
+    "calibrated_at": "2026-10-12T02:04:17+0000",
     "match_size": "960x540",
     "match_samples": 32,
     "photo_patches_sRGB": {
@@ -25,133 +25,23 @@
     },
     "render_patches_sRGB": {
       "A": [
-        41.8,
-        134.8,
-        166.8
+        37.0,
+        133.6,
+        166.2
       ],
       "B": [
-        64.5,
-        146.7,
-        177.5
+        62.7,
+        146.3,
+        177.7
       ]
+    },
+    "per_patch_stops_vs_photo": {
+      "A": -0.361,
+      "B": 0.349
     },
     "history": [
       {
         "iteration": 0,
-        "exposure": 0.0,
-        "render_patches": {
-          "A": {
-            "pixel_box": [
-              293,
-              147,
-              298,
-              148
-            ],
-            "n": 5,
-            "mean_sRGB": [
-              82.2,
-              155.2,
-              185.0
-            ]
-          },
-          "B": {
-            "pixel_box": [
-              281,
-              143,
-              284,
-              145
-            ],
-            "n": 6,
-            "mean_sRGB": [
-              98.0,
-              165.8,
-              194.5
-            ]
-          }
-        },
-        "render_lum": 0.31264,
-        "photo_lum": 0.22681,
-        "step_stops": -0.463,
-        "seconds": 30.0
-      },
-      {
-        "iteration": 1,
-        "exposure": -0.417,
-        "render_patches": {
-          "A": {
-            "pixel_box": [
-              293,
-              147,
-              298,
-              148
-            ],
-            "n": 5,
-            "mean_sRGB": [
-              56.6,
-              141.2,
-              172.4
-            ]
-          },
-          "B": {
-            "pixel_box": [
-              281,
-              143,
-              284,
-              145
-            ],
-            "n": 6,
-            "mean_sRGB": [
-              74.5,
-              152.5,
-              183.0
-            ]
-          }
-        },
-        "render_lum": 0.25237,
-        "photo_lum": 0.22681,
-        "step_stops": -0.154,
-        "seconds": 31.9
-      },
-      {
-        "iteration": 2,
-        "exposure": -0.555,
-        "render_patches": {
-          "A": {
-            "pixel_box": [
-              293,
-              147,
-              298,
-              148
-            ],
-            "n": 5,
-            "mean_sRGB": [
-              43.8,
-              136.2,
-              167.8
-            ]
-          },
-          "B": {
-            "pixel_box": [
-              281,
-              143,
-              284,
-              145
-            ],
-            "n": 6,
-            "mean_sRGB": [
-              66.5,
-              147.8,
-              178.5
-            ]
-          }
-        },
-        "render_lum": 0.23271,
-        "photo_lum": 0.22681,
-        "step_stops": -0.037,
-        "seconds": 30.7
-      },
-      {
-        "iteration": 3,
         "exposure": -0.589,
         "render_patches": {
           "A": {
@@ -163,9 +53,9 @@
             ],
             "n": 5,
             "mean_sRGB": [
-              41.8,
-              134.8,
-              166.8
+              37.0,
+              133.6,
+              166.2
             ]
           },
           "B": {
@@ -177,30 +67,30 @@
             ],
             "n": 6,
             "mean_sRGB": [
-              64.5,
-              146.7,
-              177.5
+              62.7,
+              146.3,
+              177.7
             ]
           }
         },
-        "render_lum": 0.22809,
+        "render_lum": 0.22497,
         "photo_lum": 0.22681,
-        "step_stops": -0.008,
-        "seconds": 31.5
+        "step_stops": 0.012,
+        "seconds": 23.0
       }
     ],
-    "method": "mean luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at 960x540 with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg. Mean-only. Valid only for the GLB named by glb_sha256 (the pre-integration export without roughness/metalness/normal maps)."
+    "method": "MEAN luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at 960x540 with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg. Mean-only: the two patches individually differ from the photo in opposite directions (per_patch_stops_vs_photo). Valid only for the GLB named by glb_sha256."
   },
   "white/AgX/AgX - Base Contrast": {
     "exposure": -0.868,
     "view_transform": "AgX",
     "look": "AgX - Base Contrast",
-    "glb_sha256": "023194b78a7bf6f2325bbba71c48d25ce0566c0e49c16a8a681300346796c8f6",
+    "glb_sha256": "540b994ef5306dffab68d3de61f9769921fabbd137de2c0bd493691d9efa1b2b",
     "glb": "assets/unijack.glb",
-    "model_commit": "54503102d7b5023cfac464801d697ff78eaf6a15",
-    "model_dirty": null,
-    "render_py_blob": null,
-    "calibrated_at": "2026-10-11 (scout/blender, exposure.json before pinning; GLB sha and commit added afterwards from the 1080p sidecars)",
+    "model_commit": "a4b144e5c916daa29a8f0c773c52f8b6c1fba43f",
+    "model_dirty": true,
+    "render_py_blob": "b7ab68818ab0f316a6afa44b4d224ff0867c8fa5",
+    "calibrated_at": "2026-10-12T02:04:44+0000",
     "match_size": "960x540",
     "match_samples": 32,
     "photo_patches_sRGB": {
@@ -217,133 +107,23 @@
     },
     "render_patches_sRGB": {
       "A": [
-        60.6,
-        134.4,
-        163.6
+        60.4,
+        134.2,
+        163.4
       ],
       "B": [
         73.7,
-        146.3,
+        146.2,
         174.7
       ]
+    },
+    "per_patch_stops_vs_photo": {
+      "A": -0.316,
+      "B": 0.363
     },
     "history": [
       {
         "iteration": 0,
-        "exposure": 0.0,
-        "render_patches": {
-          "A": {
-            "pixel_box": [
-              293,
-              147,
-              298,
-              148
-            ],
-            "n": 5,
-            "mean_sRGB": [
-              105.8,
-              163.8,
-              189.4
-            ]
-          },
-          "B": {
-            "pixel_box": [
-              281,
-              143,
-              284,
-              145
-            ],
-            "n": 6,
-            "mean_sRGB": [
-              118.2,
-              174.0,
-              198.5
-            ]
-          }
-        },
-        "render_lum": 0.3573,
-        "photo_lum": 0.22681,
-        "step_stops": -0.656,
-        "seconds": 19.9
-      },
-      {
-        "iteration": 1,
-        "exposure": -0.59,
-        "render_patches": {
-          "A": {
-            "pixel_box": [
-              293,
-              147,
-              298,
-              148
-            ],
-            "n": 5,
-            "mean_sRGB": [
-              74.6,
-              144.4,
-              172.4
-            ]
-          },
-          "B": {
-            "pixel_box": [
-              281,
-              143,
-              284,
-              145
-            ],
-            "n": 6,
-            "mean_sRGB": [
-              89.8,
-              155.5,
-              183.2
-            ]
-          }
-        },
-        "render_lum": 0.26871,
-        "photo_lum": 0.22681,
-        "step_stops": -0.245,
-        "seconds": 20.2
-      },
-      {
-        "iteration": 2,
-        "exposure": -0.81,
-        "render_patches": {
-          "A": {
-            "pixel_box": [
-              293,
-              147,
-              298,
-              148
-            ],
-            "n": 5,
-            "mean_sRGB": [
-              63.6,
-              136.4,
-              165.6
-            ]
-          },
-          "B": {
-            "pixel_box": [
-              281,
-              143,
-              284,
-              145
-            ],
-            "n": 6,
-            "mean_sRGB": [
-              76.8,
-              148.0,
-              176.5
-            ]
-          }
-        },
-        "render_lum": 0.2372,
-        "photo_lum": 0.22681,
-        "step_stops": -0.065,
-        "seconds": 20.0
-      },
-      {
-        "iteration": 3,
         "exposure": -0.868,
         "render_patches": {
           "A": {
@@ -355,9 +135,9 @@
             ],
             "n": 5,
             "mean_sRGB": [
-              60.6,
-              134.4,
-              163.6
+              60.4,
+              134.2,
+              163.4
             ]
           },
           "B": {
@@ -370,17 +150,17 @@
             "n": 6,
             "mean_sRGB": [
               73.7,
-              146.3,
+              146.2,
               174.7
             ]
           }
         },
-        "render_lum": 0.22992,
+        "render_lum": 0.22942,
         "photo_lum": 0.22681,
-        "step_stops": -0.02,
-        "seconds": 20.3
+        "step_stops": -0.016,
+        "seconds": 25.5
       }
     ],
-    "method": "mean luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at 960x540 with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg. Mean-only. Valid only for the GLB named by glb_sha256 (the pre-integration export without roughness/metalness/normal maps)."
+    "method": "MEAN luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at 960x540 with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg. Mean-only: the two patches individually differ from the photo in opposite directions (per_patch_stops_vs_photo). Valid only for the GLB named by glb_sha256."
   }
 }
