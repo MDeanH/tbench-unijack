@@ -35,28 +35,30 @@ the file to Z-up (Blender x = model x, y = -model z, z = model y); the kit is sc
 
 ## Timings (4 CPU cores, no GPU, OpenImageDenoise on, adaptive sampling)
 
-Measured wall times of `bpy.ops.render.render` (`seconds` in each sidecar); the whole process adds about 5 s for import, material setup
-and the sidecar. The container's speed varied by more than 3x between sessions (the same 640 x 360 / 48-sample hero frame took 11 s in one
-session and 38 s in the next, and the 1080p low frame 153 s once and 362 s the time before), so take the ranges, not single numbers.
-These were measured on the pre-integration GLB (no roughness/metalness/normal maps, sha `023194b7...`); the integrated GLB adds three
-texture lookups per photo face and should not change them by much, but the 1080p batch has not been re-timed on it yet.
+Measured wall times of `bpy.ops.render.render` (`seconds` in each sidecar); the whole process adds about 3 to 5 s for import, material setup
+and the sidecar. The container's speed varies by more than 3x between sessions and with what else is running on it (the same 640 x 360 /
+48-sample hero frame took 11 s in one session and 38 s in the next; the 1080p low frame 153, 362 and 464 s in three sessions), so take the
+ranges, not single numbers. The latest column is the integrated GLB (sha `540b994e...`, commit `a4b144e`, with the roughness/metalness/normal
+maps on the photo faces), rendered 2026-10-12 while other agents shared the CPU (load average 2 to 3.5 before the batch started):
+every frame was slower than on the pre-integration GLB, 1.1x to 1.9x, and the batch cannot separate the maps' cost from the contention.
 
-| frame | view | samples | render time |
-|---|---|---|---|
-| 640 x 360 | hero | 48 | 11 - 38 s |
-| 1280 x 720 | hero | 128 | 109 s |
-| 1920 x 1080 | hero (dark) | 192 | 407 - 529 s (6.8 - 8.8 min); `renders/hero.json` |
-| 1920 x 1080 | low | 128 | 153 - 362 s; `renders/low.json` |
-| 1920 x 1080 | top | 128 | 419 s (7.0 min); `renders/top.json` |
-| 1920 x 1080 | side | 128 | 406 s (6.8 min); `renders/side.json` |
-| 1920 x 1080 | under (no ground, underfill light) | 128 | 103 s (1.7 min, mostly empty frame); `renders/under.json` |
-| 1920 x 1080 | hero (white studio) | 128 | 292 s (4.9 min); `renders/hero-white.json` |
-| 960 x 540 x 4 iterations | `--match-photo` | 32 | about 2 min per studio (dark: 4 x 31 s; white: 4 x 20 s) |
-| 320 x 180, six frames + both calibrations | `--all --match-photo` smoke test (8-12 samples) | | 38 s wall on the integrated GLB (code-path test, not a picture) |
-| 3840 x 2160 | hero | 192 | **estimate, not rendered**: 4 x the 1080p time, 27 - 35 min on this machine |
+| frame | view | samples | render time, pre-integration GLB `023194b7...` (2026-10-11) | integrated GLB `540b994e...` (2026-10-12, shared CPU) |
+|---|---|---|---|---|
+| 640 x 360 | hero | 48 | 11 - 38 s | not re-timed |
+| 1280 x 720 | hero | 128 | 109 s | not re-timed |
+| 1920 x 1080 | hero (dark) | 192 | 407 - 529 s (6.8 - 8.8 min) | 770 s (12.8 min); `renders/hero.json` |
+| 1920 x 1080 | low | 128 | 153 - 362 s | 464 s (7.7 min); `renders/low.json` |
+| 1920 x 1080 | top | 128 | 419 s (7.0 min) | 679 s (11.3 min); `renders/top.json` |
+| 1920 x 1080 | side | 128 | 406 s (6.8 min) | 455 s (7.6 min); `renders/side.json` |
+| 1920 x 1080 | under (no ground, underfill light) | 128 | 103 s (1.7 min, mostly empty frame) | 199 s (3.3 min); `renders/under.json` |
+| 1920 x 1080 | hero (white studio) | 128 | 292 s (4.9 min) | 548 s (9.1 min); `renders/hero-white.json` |
+| 960 x 540 | `--match-photo`, per iteration | 32 | dark 31 s, white 20 s (4 iterations each from 0 stops: about 2 min per studio) | dark 23 s, white 26 s; one iteration each, since the stored exposures were already within 0.02 stops for the new GLB (whole run 25 - 27 s per studio including import) |
+| 320 x 180, six frames + both calibrations | `--all --match-photo` smoke test (8-12 samples) | | 38 s wall on the integrated GLB (code-path test, not a picture) | |
+| 3840 x 2160 | hero | 192 | **estimate, not rendered**: 4 x the 1080p time, 27 - 35 min | **estimate, not rendered**: about 50 min at the 2026-10-12 speed |
 
-Scene build (import + BVH + light tree) is under 2 s; time is almost all path tracing and scales with pixel count. Memory peak about 460 MB.
-Run long frames detached (`nohup ... &`) and poll for the sidecar; a 1080p batch of six views is 25 - 45 minutes here.
+Scene build (import + BVH + light tree) is under 2 s; time is almost all path tracing and scales with pixel count. Memory peak about 460 MB
+(500 MB peak reported by Cycles on the integrated GLB). Run long frames detached (`nohup ... &`) and poll for the sidecar; a 1080p batch of
+six views is 25 - 45 minutes on an idle container and took 52 minutes (53 with both calibrations) on the shared one.
 
 ## Calibration (`--match-photo`) and what it does not achieve
 
