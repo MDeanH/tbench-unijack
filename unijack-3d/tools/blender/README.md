@@ -37,28 +37,35 @@ the file to Z-up (Blender x = model x, y = -model z, z = model y); the kit is sc
 
 Measured wall times of `bpy.ops.render.render` (`seconds` in each sidecar); the whole process adds about 3 to 5 s for import, material setup
 and the sidecar. The container's speed varies by more than 3x between sessions and with what else is running on it (the same 640 x 360 /
-48-sample hero frame took 11 s in one session and 38 s in the next; the 1080p low frame 153, 362 and 464 s in three sessions), so take the
-ranges, not single numbers. The latest column is the integrated GLB (sha `540b994e...`, commit `a4b144e`, with the roughness/metalness/normal
-maps on the photo faces), rendered 2026-10-12 while other agents shared the CPU (load average 2 to 3.5 before the batch started):
-every frame was slower than on the pre-integration GLB, 1.1x to 1.9x, and the batch cannot separate the maps' cost from the contention.
+48-sample hero frame took 11 s in one session and 38 s in the next; the 1080p low frame 153, 362, 464 and 240 s in four sessions), so take the
+ranges, not single numbers. The latest column is the final GLB (sha `398d29da...`, exported from commit `7284a31`, data maps stored as PNG in
+the GLB), rendered 2026-10-12 04:11-04:50 UTC while other agents shared the CPU (load average 3.6 to 4.1 during the batch): the frames came
+out 0.5x to 0.9x of the previous (also shared-CPU) batch on GLB `540b994e...` and 0.8x to 1.6x of the idle-container times on the
+pre-integration GLB, so none of the three columns separates the maps' cost from the contention. The hero frame was rendered twice: 450 s
+alone, then 629 s with the viewer-shots test running at the same time (the 629 s frame is the one in `renders/`, re-rendered so that its
+sidecar records a clean tree; the two frames measure the same mask patches to 0.1).
 
-| frame | view | samples | render time, pre-integration GLB `023194b7...` (2026-10-11) | integrated GLB `540b994e...` (2026-10-12, shared CPU) |
-|---|---|---|---|---|
-| 640 x 360 | hero | 48 | 11 - 38 s | not re-timed |
-| 1280 x 720 | hero | 128 | 109 s | not re-timed |
-| 1920 x 1080 | hero (dark) | 192 | 407 - 529 s (6.8 - 8.8 min) | 770 s (12.8 min); `renders/hero.json` |
-| 1920 x 1080 | low | 128 | 153 - 362 s | 464 s (7.7 min); `renders/low.json` |
-| 1920 x 1080 | top | 128 | 419 s (7.0 min) | 679 s (11.3 min); `renders/top.json` |
-| 1920 x 1080 | side | 128 | 406 s (6.8 min) | 455 s (7.6 min); `renders/side.json` |
-| 1920 x 1080 | under (no ground, underfill light) | 128 | 103 s (1.7 min, mostly empty frame) | 199 s (3.3 min); `renders/under.json` |
-| 1920 x 1080 | hero (white studio) | 128 | 292 s (4.9 min) | 548 s (9.1 min); `renders/hero-white.json` |
-| 960 x 540 | `--match-photo`, per iteration | 32 | dark 31 s, white 20 s (4 iterations each from 0 stops: about 2 min per studio) | dark 23 s, white 26 s; one iteration each, since the stored exposures were already within 0.02 stops for the new GLB (whole run 25 - 27 s per studio including import) |
-| 320 x 180, six frames + both calibrations | `--all --match-photo` smoke test (8-12 samples) | | 38 s wall on the integrated GLB (code-path test, not a picture) | |
-| 3840 x 2160 | hero | 192 | **estimate, not rendered**: 4 x the 1080p time, 27 - 35 min | **estimate, not rendered**: about 50 min at the 2026-10-12 speed |
+| frame | view | samples | pre-integration GLB `023194b7...` (2026-10-11, mostly idle) | integrated GLB `540b994e...` (2026-10-12 02:04-02:56, shared CPU) | final GLB `398d29da...` (2026-10-12 04:11-04:50, shared CPU) |
+|---|---|---|---|---|---|
+| 640 x 360 | hero | 48 | 11 - 38 s | not re-timed | not re-timed |
+| 1280 x 720 | hero | 128 | 109 s | not re-timed | not re-timed |
+| 1920 x 1080 | hero (dark) | 192 | 407 - 529 s (6.8 - 8.8 min) | 770 s (12.8 min) | 450 s alone, 629 s (10.5 min) alongside the viewer test; `renders/hero.json` |
+| 1920 x 1080 | low | 128 | 153 - 362 s | 464 s (7.7 min) | 240 s (4.0 min); `renders/low.json` |
+| 1920 x 1080 | top | 128 | 419 s (7.0 min) | 679 s (11.3 min) | 336 s (5.6 min); `renders/top.json` |
+| 1920 x 1080 | side | 128 | 406 s (6.8 min) | 455 s (7.6 min) | 234 s (3.9 min); `renders/side.json` |
+| 1920 x 1080 | under (no ground, underfill light) | 128 | 103 s (1.7 min, mostly empty frame) | 199 s (3.3 min) | 100 s (1.7 min); `renders/under.json` |
+| 1920 x 1080 | hero (white studio) | 128 | 292 s (4.9 min) | 548 s (9.1 min) | 297 s (5.0 min); `renders/hero-white.json` |
+| 960 x 540 | `--match-photo`, per iteration | 32 | dark 31 s, white 20 s (4 iterations each from 0 stops: about 2 min per studio) | dark 23 s, white 26 s; one iteration each (the stored exposures were already within 0.02 stops) | dark 23 s, white 23 s; one iteration each, exposures unchanged (-0.589 / -0.868), 25 s per studio including import |
+| 320 x 180, six frames + both calibrations | `--all --match-photo` smoke test (8-12 samples) | | 38 s wall on the integrated GLB (code-path test, not a picture) | | not re-run |
+| 3840 x 2160 | hero | 192 | **estimate, not rendered**: 4 x the 1080p time, 27 - 35 min | **estimate, not rendered**: about 50 min | **estimate, not rendered**: 30 - 45 min at this batch's speed |
 
 Scene build (import + BVH + light tree) is under 2 s; time is almost all path tracing and scales with pixel count. Memory peak about 460 MB
-(500 MB peak reported by Cycles on the integrated GLB). Run long frames detached (`nohup ... &`) and poll for the sidecar; a 1080p batch of
-six views is 25 - 45 minutes on an idle container and took 52 minutes (53 with both calibrations) on the shared one.
+(500 MB peak reported by Cycles on the integrated and final GLBs). Run long frames detached (`nohup ... &`) and poll for the sidecar; a 1080p
+batch of six views is 25 - 45 minutes on an idle container, took 52 minutes (53 with both calibrations) on the shared one at 02:00 and 28
+minutes (29 with both calibrations) on the shared one at 04:10. Note that `node tools/export-glb.mjs` is not byte-deterministic: two exports
+from the same commit differ in the order of the 11 embedded image buffer views (the image bytes are identical as a set), so the GLB sha256 that
+`exposure.json` and the sidecars pin is the sha of one particular export, not of the commit; re-export means re-calibrate (one iteration,
+about 25 s per studio, when nothing else changed).
 
 ## Calibration (`--match-photo`) and what it does not achieve
 
