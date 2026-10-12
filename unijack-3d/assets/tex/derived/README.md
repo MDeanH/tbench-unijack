@@ -3,7 +3,7 @@
 Written by `tools/derive-maps.py` from `assets/tex/*.webp`; same pixel grid as the photo textures. Status: **photo-derived**: the finishes are
 inferred from each pixel's colour, not measured. A white pixel gets the matte silkscreen finish whether it is silkscreen or white plastic; a grey
 pixel gets the metal finish whether it is a pad, a shield or a grey part (known case: the grey plastic housing of the J400 SO-DIMM socket on base-top
-reads as metal), except where it is enclosed by a dark body (IC laser markings, highlights inside black housings: matte `marking` class). Nothing is
+reads as metal; the reverse case: the USB-A J304 shell top is photographed dark in the flat lay and gets the matte dark finish although gallery-1.jpg shows bright steel), except where it is enclosed by a dark body (IC laser markings, highlights inside black housings: matte `marking` class). Nothing is
 added that the photo does not show.
 
 Every map has a provenance sidecar `<map>.webp.json` (generator and git commit, source texture and its sha256, every threshold and finish

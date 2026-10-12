@@ -136,8 +136,9 @@ GLB will be in the new sidecars):
     **kept**: Cycles ignores a socket's default value while it is linked, so the script never writes one there; `--photo-rough-scale f` (default 1)
     multiplies the roughness map through a clamped Math node instead, and the sidecar says `map ... (kept)` or `x f (Math node)`. What the script
     does set on these faces: Specular IOR Level 0.30 and a thin clear coat (weight 0.08, roughness 0.10), the glossy-mask look. Metal pixels of
-    the photo get their base colour times `--photo-metal-f0` (default 1.5, keyed on the metalness map through a Mix node): this mirrors the
-    viewer's **assumed** `PHOTO_METAL_F0` (the photographed grey of a pad is its reflection of the softbox, not its reflectance; the GLB carries
+    the photo get their base colour times `--photo-metal-f0` (default 1.5, keyed on the metalness map through a Mix node): this follows the
+    viewer's **assumed** `PHOTO_METAL_F0` as first set (1.5; the viewer now uses 1.2, and the existing renders were made with 1.5: pass
+    `--photo-metal-f0 1.2` to follow the viewer) (the photographed grey of a pad is its reflection of the softbox, not its reflectance; the GLB carries
     the plain photo colour). On a GLB without the maps the old fixed values apply (roughness 0.50) and the sidecar says `no map: set 0.50`.
   * *Plain metals* (three.js metalness 0.5 or more) become true conductors (metallic 1). Roughness is clamped to [floor, 0.6]: the floor is
     **0.45 for neutral steel/tin colours** (shells, shields, pads, leads; base-colour chroma below 0.15) and 0.18 for gold-coloured ones (pins,
@@ -162,8 +163,9 @@ measurements with per-patch stops, the `synthetic` sentence above, the `disclosu
 the project's `status_note`. Keep the sidecar with the image when it goes into the asset library.
 
 `exposure.json` entries carry the same pins (`glb_sha256`, `model_commit`, `render_py_blob`, `calibrated_at`) and the per-patch stops. The two
-entries in the repository were calibrated on the pre-integration GLB `023194b7...` (commit 5450310); they are kept as a record and will be
-refused for any other GLB until `--match-photo` is re-run.
+entries in the repository were last calibrated on the GLB exported at commit 7284a31 (`398d29da...`). `export-glb.mjs` is not byte-deterministic
+(the embedded images come out in a different order from run to run), so a fresh export usually hashes differently and `render.py` refuses the
+stored exposure until `--match-photo` is re-run (one iteration per studio, about 25 s each).
 
 The six library frames are `hero`, `low`, `top`, `side`, `under` (dark studio) and `hero-white`. Anything in `renders/` named `test-*`,
 `*-640-test`, `*-640-check` or `_match-*` is a calibration or smoke-test frame, several of them from earlier light rigs; do not use them.
