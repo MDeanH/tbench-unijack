@@ -11,8 +11,8 @@ value, class fractions, creation time, disclosure). The maps are deterministic: 
 
 | file | channels | meaning |
 |---|---|---|
-| `<tex>-rm.webp` | G = roughness, B = metalness (R unused = 1) | three.js `roughnessMap` + `metalnessMap`; glTF metallicRoughness layout |
-| `<tex>-nrm.webp` | tangent-space normal (OpenGL +Y) | mild relief: silkscreen proud, pads and gold below the mask. Not generated for mercury-back (viewed from below, mirrored u). |
+| `<tex>-rm.webp` | G = roughness, B = metalness (R unused = 1) | three.js `roughnessMap` + `metalnessMap`; glTF metallicRoughness layout. Lossless WebP: the file holds the 8-bit map exactly |
+| `<tex>-nrm.webp` | tangent-space normal (OpenGL +Y) | mild relief: silkscreen proud, pads and gold below the mask. Not generated for mercury-back (viewed from below, mirrored u). Lossless WebP |
 | `<map>.webp.json` | JSON | provenance sidecar (see above) |
 | `<tex>-albedo.webp` | sRGB colour | only written with `--delight`; not used by the viewer (see "Delight pass" below) |
 
@@ -44,7 +44,7 @@ Maps are anti-aliased with a 0.6 px Gaussian; the relief is smoothed with 1.0 px
 
 ## This run
 
-Commit `62829ab2f26d7e9a19d7683367f6f17a95c6acef` (clean tree for the tool and textures), 2026-10-12T02:00:54+00:00.
+Commit `b26def303c0b351589e869fdfc79d63dfd6699e8` (clean tree for the tool and textures), 2026-10-12T03:06:49+00:00.
 
 | texture | mask | silk | tin | dark | gold | marking | other | mean roughness | mean metalness | max normal tilt | delight ratio range (raw) | clamped px |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|

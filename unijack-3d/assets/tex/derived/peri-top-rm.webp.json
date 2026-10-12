@@ -6,7 +6,7 @@
  "status": "photo-derived",
  "generator": {
   "tool": "unijack-3d/tools/derive-maps.py",
-  "commit": "62829ab2f26d7e9a19d7683367f6f17a95c6acef",
+  "commit": "b26def303c0b351589e869fdfc79d63dfd6699e8",
   "tree": "clean",
   "args": []
  },
@@ -101,7 +101,8 @@
   "silk_halo_excludes": "tin within 1 px of the tin mask eroded by 2 px",
   "marking_rule": "tin/silk weight inside holes of the dark mask after a 2 px closing -> marking",
   "speckle_filter_px": 3,
-  "clean_sigma_px": 0.6
+  "clean_sigma_px": 0.6,
+  "encoding": "lossless WebP, 8 bit per channel (exact)"
  },
  "class_fraction": {
   "mask": 0.5225,
@@ -112,6 +113,6 @@
   "marking": 0.0042,
   "other": 0.0191
  },
- "created": "2026-10-12T02:00:54+00:00",
+ "created": "2026-10-12T03:06:49+00:00",
  "disclosure": "Photo-derived, not measured: this map re-weights the pixels of the photo texture it was segmented from by their colour (teal = solder mask, white = silkscreen, grey = tin, black = IC body, tan = gold, pale pixels enclosed by a black body = matte marking). A white pixel is treated as silkscreen whether it is silkscreen or white plastic, a grey pixel as metal whether it is a pad or a grey part. Nothing is added that the photograph does not show."
 }
