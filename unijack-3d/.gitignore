@@ -5,3 +5,5 @@ qa-out/
 source-photos/
 dist/
 assets/*.glb
+renders/
+__pycache__/

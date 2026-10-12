@@ -46,6 +46,7 @@ from any other angle.
 | Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97; re-checked at 0.97 with the surface-finish maps, `tools/colorcal.py`). Hue and highlights are approximate. The solder mask reflects the environment at a quarter strength (`PHOTO_ENV`), because the room environment has a lamp at the zenith that a glossy mask mirrors in the top view and the photos' lights were off-axis; metals reflect it fully. (In three r186 `material.envMapIntensity` is overwritten by `scene.environmentIntensity`, so this is done per pixel in the shader.) |
 | Studio, ground and post-processing | **Synthetic rendering choices, not the photo's set-up.** The light is a procedural studio map (`src/lib/stage.js`: a large warm key box above-front-left, a cool fill, a cool rim strip, a graded room) rendered through PMREMGenerator, plus one warm shadow-casting directional key (4096 px map fitted to the kit, 5-tap PCF, soft) and a weak cool rim. The key's direction follows gallery-1.jpg (header shadows fall to the lower right); its softness and colour temperature are judged by eye against that photo, not measured. The dark satin table and the graded dark backdrop are inventions: the gallery photos were shot on a white sweep. The table reflects only the studio map, not the board. Post-processing (`src/lib/post.js`): GTAO ambient occlusion (3.5 mm radius, contact darkening under connectors and the module), SMAA, and in the Hero preset a subtle depth of field while nothing moves; tone mapping and sRGB happen in the OutputPass. AO and DOF switch off after about 20 slow frames (over 30 ms) and with `?quality=low`; `?quality=high` keeps them. With the studio map the mean solder-mask colour of the Hero render stays within about 4 percent of the previous rig (`tools/qa-render.mjs`, mask boxes documented in qa-out notes). |
 | Undersides of the base board and PeriBoard | **not photographed**, shown plain. Mercury's back is photographed and shown. |
+| Offline Cycles stills (`renders/`, made by `tools/blender/render.py` from the exported GLB) | **synthetic studio**: the three area lights, gradient world, ground plane, camera, depth and the gloss/coat added to the mask and plastics are render choices, not the photographs' lighting. Exposure is matched so a plain solder-mask patch has the mean luminance of the same patch in `gallery-1.jpg` (hue still differs: the rendered mask reads lighter and less saturated, the measured numbers are in each render's sidecar `.json`). Every render has a sidecar with the model commit, GLB checksum, all settings and the disclosure sentence. Same geometry, same assumed heights and colours as the viewer. |
 | Function of any part | inferred from shape only ("appears to be ...") |
 
 Nothing in this model is a vendor-supplied mechanical specification. When Jens supplies a STEP file or the KiCad/Altium project, replace
@@ -66,6 +67,8 @@ tools/derive-maps.py                      textures -> assets/tex/derived (surfac
 tools/qa-render.mjs, overlay.py, crop.py  headless QA renders, footprint-vs-photo overlay, zoom-with-grid
 tools/viewer-shots.mjs                    end-to-end viewer test (clicks the UI, screenshots, console errors)
 tools/export-glb.mjs                      exports assets/unijack.glb (named nodes, metadata in glTF extras)
+tools/blender/render.py                   offline photoreal stills with Blender Cycles from the GLB (see tools/blender/README.md)
+renders/                                  Cycles stills + provenance sidecars (not committed)
 CONTRACT.md                               rules for part builders
 ```
 
@@ -80,6 +83,7 @@ node tools/viewer-shots.mjs                   # drive the UI, save screenshots, 
 node tools/export-glb.mjs                     # write assets/unijack.glb (carries the derived roughness/metalness and normal maps)
 python3 tools/derive-maps.py                  # regenerate assets/tex/derived after the textures change (python with pillow, numpy, scipy)
 python3 tools/colorcal.py qa-out/x/top.png    # photo-vs-render luminance check of a `--only=base --view=top --mode=photo` render
+<venv-bpy>/bin/python -I tools/blender/render.py --view hero --samples 192 --size 1920x1080   # Cycles still (needs the bpy wheel, see tools/blender/README.md)
 ```
 
 The QA tools render with software WebGL (SwiftShader) so they run without a GPU, in a container or CI.
@@ -95,7 +99,7 @@ The viewer is marked `noindex` while it is a work in progress.
 
 * Tiny passives (0402 and smaller) are texture-only; larger parts have real geometry.
 * Real-time lighting cannot reproduce the full macro depth of field or the cinematic look of an offline render (the Hero preset's depth of field is a screen-space approximation). This is a viewer, not the
-  promotional film; the film should be rendered offline from real CAD or from this GLB.
+  promotional film; the film should be rendered offline from real CAD or from this GLB. `tools/blender/render.py` makes path-traced stills from the GLB with the viewer's camera presets (about 7 to 9 minutes per 1080p hero frame on 4 CPU cores, 3 to 6 minutes for the other views).
 * Tall parts at the photo edge (RJ45, USB-A, barrel jack, terminal, mini- and micro-USB) show some of their own side faces in their top-face pixels (the flat lay is a perspective photo); their PCB-level footprints are displaced by a fraction of a millimetre.
 * The satin table is a disc that fades out 200 to 520 mm from the kit; at camera elevations under about 10 degrees (Side preset) its grazing-angle sheen is lighter than the backdrop behind it, so a soft horizon line shows. Post-processing (AO, SMAA, DOF) roughly doubles the frame cost; the adaptive quality drops AO and DOF on slow machines, and `?quality=low` turns the whole chain off.
 * Not yet tested on a real GPU, in Safari or on iOS.
