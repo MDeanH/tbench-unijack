@@ -39,6 +39,11 @@ function parseLook(s) {
     const frame = only === 'base' ? fr.base : only === 'peri' ? fr.peri : only === 'mercury' ? fr.mercuryFront : null;
     let W = num('w', 0), H = num('h', 0);
     if ((view === 'top' || view === 'bottom') && frame && !W) { W = frame.wpx; H = frame.hpx; }
+    if ((view === 'top' || view === 'bottom') && !frame && !W) {   // whole kit: canvas in the kit's plan aspect (the ortho frame below is the kit box)
+      kit.setVisible({ base: true, peri: true, mercury: true }); kit.setInsertion(num('ins', 1)); kit.setExplode(num('exp', 0)); kit.root.updateMatrixWorld(true);
+      const b = new THREE.Box3(); kit.root.traverse((o) => { if ((o.isMesh || o.isInstancedMesh) && !o.userData.stage) b.expandByObject(o); });
+      const s = b.getSize(new THREE.Vector3()); W = 1600; H = Math.round(W * s.z / s.x);
+    }
     W = W || 1600; H = H || 900;
 
     const canvas = document.createElement('canvas'); document.body.appendChild(canvas);
@@ -75,9 +80,11 @@ function parseLook(s) {
     const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     let cam;
     if (view === 'top' || view === 'bottom') {
-      // exact orthographic frame of the board's texture so the render overlays the photo 1:1
-      const target = new THREE.Vector3(); (only === 'base' ? kit.base : only === 'peri' ? kit.peri : kit.mercury).getWorldPosition(target);
-      const hw = frame ? frame.W / 2 : size.x / 2, hd = frame ? frame.D / 2 : size.z / 2;
+      // exact orthographic frame of the board's texture so the render overlays the photo 1:1; for the whole kit (only=all) the frame is
+      // the kit's bounding box with a 2 percent margin, centred on it (it used to centre on Mercury, which cropped the kit)
+      const target = new THREE.Vector3();
+      if (frame) (only === 'base' ? kit.base : only === 'peri' ? kit.peri : kit.mercury).getWorldPosition(target); else target.copy(ctr);
+      const hw = frame ? frame.W / 2 : size.x / 2 * 1.02, hd = frame ? frame.D / 2 : size.z / 2 * 1.02;
       cam = new THREE.OrthographicCamera(-hw, hw, hd, -hd, 0.1, 1000);
       cam.up.set(0, 0, -1);
       const dir = view === 'top' ? 1 : -1;

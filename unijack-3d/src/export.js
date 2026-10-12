@@ -23,7 +23,7 @@ const LIGHTING_NOTE = 'Photo textures are exported at neutral albedo (base colou
   + 'The metallic-roughness and normal textures of the photo materials are PHOTO-DERIVED by colour segmentation of the photographs (teal = solder mask, '
   + 'white = silkscreen, grey = tin, black = IC body, tan = gold, pale pixels enclosed by a black body = matte IC marking), not measured; the relief in the '
   + 'normal textures is synthetic (silkscreen proud, pads below the mask); metal pixels use the photo colour as their specular colour. A grey plastic part '
-  + '(for example the SO-DIMM socket housing) therefore reads as metal. Each map has a provenance sidecar (assets/tex/derived/<map>.webp.json) in the source repository.';
+  + '(for example the SO-DIMM socket housing) therefore reads as metal. Each map has a provenance sidecar (assets/tex/derived/<map>.webp.json) in the source repository; they are stored lossless here (PNG), the photo textures as JPEG.';
 const COPYRIGHT = 'Illustrative model, NOT CAD. Photo textures are derived from the TBench / Crowd Supply gallery photographs; '
   + 'permission to redistribute them has not been confirmed.';
 const STATUS_KEY = {
@@ -125,8 +125,8 @@ function nameNodes(kit) {
     for (const [t, n] of texNames) {
       t.name = n; t.userData.mimeType = 'image/jpeg';   // JPEG keeps the GLB small
       const d = t.userData.derived || {};                // derived finish maps ride along as metallicRoughness / normal textures
-      if (d.rm) { d.rm.name = n + '-rm'; d.rm.userData.mimeType = 'image/jpeg'; }
-      if (d.nrm) { d.nrm.name = n + '-nrm'; d.nrm.userData.mimeType = 'image/jpeg'; }
+      if (d.rm) { d.rm.name = n + '-rm'; d.rm.userData.mimeType = 'image/png'; }     // data maps stay lossless (JPEG put errors of up to 0.48 into the metalness channel)
+      if (d.nrm) { d.nrm.name = n + '-nrm'; d.nrm.userData.mimeType = 'image/png'; }
     }
     const libNames = new Map(Object.entries(kit.ctx.mat).filter(([, v]) => v && v.isMaterial).map(([k, v]) => [v, k]));
     const allMats = new Set(); kit.root.traverse((o) => { for (const m of [].concat(o.material || [])) allMats.add(m); });

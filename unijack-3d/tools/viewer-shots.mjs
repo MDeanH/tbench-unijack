@@ -2,12 +2,12 @@
 // End-to-end viewer check (software WebGL). Loads the page, drives the UI like a user, saves screenshots and reports
 // console errors AND warnings, horizontal overflow, clipped or overlapping controls, the canvas height fraction, the parts panel and
 // info card geometry, keyboard focus on every tab stop, label occlusion, hidden-part fly-to, the Backdrop (white sweep) toggle, reduced motion,
-// context loss and the no-WebGL fallback.
+// context loss, the post chain under ?quality=high (AO and DOF really on; the other sessions drop them on software GL) and the no-WebGL fallback.
 //
 //   node tools/viewer-shots.mjs [--dir=qa-out/viewer] [--page=index.html]
 //        [--widths=320,360,390,768,1024,1440] [--sizes=667x375,844x390,1366x657]    layout checks at these viewports (defaults shown)
 //        [--flow=0]   skip the long desktop/mobile interaction flow         [--extra=0]   skip keyboard / reduced-motion / context-loss / no-WebGL sessions
-//        [--env=0]    skip the Backdrop (sweep) sessions
+//        [--env=0]    skip the Backdrop (sweep) sessions                        [--post=0]   skip the ?quality=high post-chain session
 // Prints a JSON report and a final "FAILED CHECKS" list (exit code 1 if any check failed).
 // Timing: software WebGL renders a frame in seconds, so after anything that animates the script waits on window.__unijack.busy() (camera tween,
 // explode tween, insertion play, damping) plus a short grace, never on a fixed delay; screenshots after a change wait for a fresh rendered frame.
@@ -38,7 +38,9 @@ const GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-
 const browser = await chromium.launch({ executablePath: exe, args: GL });
 fs.mkdirSync(OUT, { recursive: true });
 const report = [], failures = [];
-const settled = async (page, extra = 150) => { await page.waitForFunction(() => !window.__unijack.busy(), null, { timeout: 120000 }); await page.waitForTimeout(extra); };   // camera tween, explode and insertion animations finished
+// camera tween, explode and insertion animations finished, and camera damping at rest. busy() reads a flag the loop refreshes once per tick, so wait for a
+// tick that is newer than this call first (right after `controls.autoRotate = false` the flag is stale for one tick and would read "still" while the damping tail runs)
+const settled = async (page, extra = 150) => { const t = await page.evaluate(() => window.__unijack.ticks); await page.waitForFunction((t) => window.__unijack.ticks > t && !window.__unijack.busy(), t, { timeout: 120000 }); await page.waitForTimeout(extra); };
 // ask the viewer for a frame and wait until it has rendered one (the loop renders on demand; a screenshot right after a change could show the old frame)
 const freshFrame = async (page) => { const n = await page.evaluate(() => { const U = window.__unijack, n = U.frames; U.controls.dispatchEvent({ type: 'change' }); return n; }); await page.waitForFunction((n) => window.__unijack.frames > n, n, { timeout: 120000 }); };
 const openPanel = async (page) => { if (await page.locator('#parts-panel').isHidden()) { await page.click('#btn-parts'); await page.waitForTimeout(300); } };   // the UI closes the panel after a selection on short stages
@@ -355,7 +357,29 @@ if (args.env !== '0' && args.env !== 0) {
   }, { query: '?env=sweep' });
 }
 
-// ---------- 7. no WebGL: the fallback and dead controls ----------
+// ---------- 7. post chain under ?quality=high: on software GL the adaptive quality drops AO and DOF within the first auto-rotate frames of every
+// session above, so none of their screenshots exercises GTAO or the depth of field; this session pins the chain on and checks it is really running
+// (a GTAO / DOF regression would otherwise pass the suite). Skip with --post=0.
+// The session runs with reduced motion: the viewer then starts without auto-rotate and without camera damping. (Without it the auto-rotation that runs
+// from the first frame leaves a damping tail of about 140 ticks after it is switched off, 2 s at 60 fps but minutes at the 2.7 s per AO + DOF frame of
+// software GL, and DOF, correctly, stays off while the camera still moves.) The post chain itself does not depend on the motion setting.
+if (args.post !== '0' && args.post !== 0) {
+  await session('quality-high', { viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' }, async (page, shot, res) => {
+    await settled(page); await freshFrame(page);   // Hero preset, nothing moving: DOF is due
+    res.post = await page.evaluate(() => { const U = window.__unijack; return { quality: U.quality, hasPost: !!U.post, state: U.post ? { ...U.post.state } : null, passes: U.post ? U.post.passCount : 0, dropped: U.perf.dropped, slow: U.perf.slow, samples: U.perf.samples }; });
+    await shot('1-hero-ao-dof');
+    check('quality-high', '?quality=high keeps the post chain (ao + aa + dof in the settled Hero view, 4 passes)', res.post.hasPost && res.post.state?.ao === true && res.post.state?.aa === true && res.post.state?.dof === true && res.post.passes === 4, res.post);
+    check('quality-high', 'adaptive quality never dropped AO under ?quality=high', res.post.dropped === false, res.post);
+    // DOF goes off while something moves (the camera rotating; set on the controls directly, the UI button is disabled under reduced motion) and comes back when it stops
+    await page.evaluate(() => { window.__unijack.controls.autoRotate = true; }); await freshFrame(page); await freshFrame(page);
+    res.rotating = await page.evaluate(() => ({ ...window.__unijack.post.state }));
+    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await settled(page); await freshFrame(page);
+    res.stopped = await page.evaluate(() => ({ ...window.__unijack.post.state }));
+    check('quality-high', 'depth of field is off while auto-rotating and on again once still (AO stays on)', res.rotating.ao === true && res.rotating.dof === false && res.stopped.ao === true && res.stopped.dof === true, { rotating: res.rotating, stopped: res.stopped });
+  }, { query: '?quality=high' });
+}
+
+// ---------- 8. no WebGL: the fallback and dead controls ----------
 if (args.extra !== '0' && args.extra !== 0) {
   const nb = await chromium.launch({ executablePath: exe, args: ['--disable-webgl', '--disable-3d-apis', '--disable-gpu', '--no-sandbox'] });
   for (const [w, h] of [[1440, 900], [390, 844]]) {

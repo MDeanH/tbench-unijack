@@ -84,7 +84,7 @@ Put `meta` on the GROUP, not on its sub-meshes. The viewer picks the nearest anc
 
 Measured, not guessed. The whole assembled kit currently costs about 138k triangles, 285 meshes and **753 draw calls per frame including the shadow pass**,
 measured **with the post-processing chain off**: `node tools/qa-render.mjs --only=all --post=0` prints `calls=` (oblique photo renders run the chain by default,
-and its GTAO pass draws the scene a second time for normals and depth, about 437 more calls, plus a few full-screen quads: that cost belongs to the viewer's post
+and its GTAO pass draws the scene a second time for normals and depth: measured 1197 calls with AO + SMAA and 1198 with the depth of field, i.e. 444 to 445 more than the plain 753, including the full-screen quads; that cost belongs to the viewer's post
 chain, not to the kit, so it is outside the kit budget; the plain-render number is the one to compare). Keep the kit at or under about 800 draw calls and 150k triangles. Real cost is draw calls, not mesh count:
 a multi-material mesh costs one draw call per material group, so `prim.boxPart` / `cylPart` / `boardSlab` merge face groups to one group per distinct material,
 small parts (under 3 mm) do not cast shadows, and instanced leads/pins/pads are one call each. Use instancing or merged geometry for repeated parts; avoid per-part
@@ -117,3 +117,12 @@ z-fighting, parts clipping into the board or each other, and implausible proport
 
 Acceptance: footprints of all large parts within about 0.5 mm of the photo outline; all parts have metadata; budgets met;
 no console errors; oblique and low views look like the real hardware in `source-photos/gallery-1.jpg`.
+
+Colour acceptance (the viewer's calibration target is the 3/4 photograph, not the flat-lay texture): the Hero render
+`node tools/qa-render.mjs --only=all --view=oblique --az=32 --el=34 --dof=1 --out=qa-out/KEY/hero.png` must pass
+`$PY tools/colorcal.py --hero qa-out/KEY/hero.png`, i.e. the two plain solder-mask boxes A/B of the render are within 0.90..1.10 of the
+linear luminance of the same two mask patches in gallery-1.jpg (A 800,790-940,835, B 690,855-780,915). Measured on the integrated model:
+A 1.008, B 0.927 (studio, 2026-10-12); the white sweep is reported the same way (0.981 / 0.903) and `tools/viewer-shots.mjs` holds its mask luminance
+within 10 percent of the studio's. The old top-view check (`colorcal.py` without `--hero`, render vs the flat-lay texture) is informational
+only: the texture is a 2.0 to 2.6 x darker exposure than gallery-1, so it reads about 2.7 (1.2 after the `--exposure` correction) and carries
+no pass band any more.

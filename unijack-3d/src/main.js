@@ -39,7 +39,7 @@ async function start(renderer) {
   const post = QUALITY === 'low' ? null : makePost(renderer, scene, camera, { ao: true, dof: false, aa: true });
   const controls = new OrbitControls(camera, canvas);
   Object.assign(controls, { enableDamping: !reduce.matches, dampingFactor: 0.08, screenSpacePanning: true, minDistance: 30, maxDistance: 900, autoRotateSpeed: 0.7 });
-  let needs = true, kit = null, currentView = 'hero', tween = null, frames = 0, camSettling = false;
+  let needs = true, kit = null, currentView = 'hero', tween = null, frames = 0, ticks = 0, camSettling = false;
   let expAnim = null, play = null, sel = null, helper = null, occAt = 0;   // animation and selection state (declared up front: resize() and applyView() read it)
   controls.addEventListener('change', () => { needs = true; });
   controls.addEventListener('start', () => { setRotate(false); clearViewChips(); });
@@ -571,7 +571,7 @@ async function start(renderer) {
   // ---------- loop (renders only when something changed) ----------
   let firstFrame = true;
   function loop(now) {
-    requestAnimationFrame(loop);
+    requestAnimationFrame(loop); ticks++;
     const moving = stepTween(now) | stepPlay(now) | stepExplode(now);
     const camMoved = controls.update();
     camSettling = !!camMoved && !controls.autoRotate;   // damping still moving the camera counts as busy (not the endless auto-rotate); updated every tick, not only on rendered frames
@@ -586,9 +586,10 @@ async function start(renderer) {
   window.__unijack = {
     kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE, frameFor, boardPoints, dirFromAzEl, VIEWS, stage, post, perf, quality: QUALITY, setEnv,
     // test hooks: busy() is true while a camera tween, the explode tween, the insertion play or camera damping is running; anim() says which;
-    // frames counts rendered frames (the loop renders on demand) so a test can wait for a fresh frame instead of a fixed time
+    // frames counts rendered frames (the loop renders on demand) so a test can wait for a fresh frame instead of a fixed time; ticks counts loop
+    // ticks (busy() reads camSettling, which is refreshed once per tick, so a caller that just changed the controls waits for the next tick first)
     busy: () => !!(tween || expAnim || play || camSettling),
     anim: () => ({ tween: !!tween, explode: expAnim ? { from: expAnim.from, to: expAnim.to, ms: expAnim.ms } : null, play: !!play, settling: camSettling }),
-    get frames() { return frames; },
+    get frames() { return frames; }, get ticks() { return ticks; },
   };
 }

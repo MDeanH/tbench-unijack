@@ -177,7 +177,10 @@ def scale_linked(nt, bsdf, name, factor):
 def metal_f0_gain(nt, bsdf, gain):
     """Mirror the viewer's PHOTO_METAL_F0: on the photo faces a metal pixel's colour is its specular colour, and the GLB carries the
     plain photographed grey (the pad's reflection of the photographer's softbox, not its reflectance). Blend Base Color towards
-    colour x gain where the metalness map says metal; dielectric pixels are unchanged. ASSUMED, as in the viewer's README row."""
+    colour x gain where the metalness map says metal; dielectric pixels are unchanged. ASSUMED, as in the viewer's README row.
+    The default gain 1.5 is the viewer's EARLIER value (src/lib/materials.js PHOTO_METAL_F0 has been 1.2 since the integration: 1.5
+    over-brightened the pads there). The renders made so far used 1.5; pass --photo-metal-f0 1.2 to follow the viewer. The gain touches
+    metal pixels only, so the exposure calibration (measured on plain solder mask) does not depend on it."""
     base = bsdf.inputs['Base Color']; met = bsdf.inputs['Metallic']
     if abs(gain - 1.0) < 1e-6 or not base.links or not met.links: return None
     tex_out = base.links[0].from_socket; met_out = met.links[0].from_socket
@@ -252,7 +255,7 @@ def tune_materials(photo_rough_scale=1.0, photo_metal_f0=1.5):
                        'photo_roughness_scale': photo_rough_scale, 'photo_metal_f0_gain': photo_metal_f0,
                        'metal_roughness_floor_neutral': METAL_FLOOR_NEUTRAL, 'metal_roughness_floor_gold': METAL_FLOOR_GOLD, 'metal_roughness_ceiling': METAL_CEIL,
                        'note': 'render choices, not measured material properties; the neutral-metal floor is a chosen matte look (gallery-1 shows dull shields), '
-                               'the metal F0 gain mirrors the viewer\'s ASSUMED PHOTO_METAL_F0'}
+                               'the metal F0 gain mirrors the viewer\'s ASSUMED PHOTO_METAL_F0 (1.5 by default, the viewer\'s earlier value; the viewer uses 1.2 now)'}
     return {'summary': summary, 'per_material': per_material}
 
 
@@ -621,7 +624,7 @@ def main():
     ap.add_argument('--look', default='AgX - Base Contrast', help="view look, e.g. 'AgX - Base Contrast', 'AgX - Punchy', 'None'")
     ap.add_argument('--no-denoise', action='store_true'); ap.add_argument('--time-limit', type=float, default=0, help='seconds per frame, 0 = none')
     ap.add_argument('--photo-rough-scale', type=float, default=1.0, help='multiply the photo faces\' roughness map through a node (1 = the GLB\'s photo-derived map as is)')
-    ap.add_argument('--photo-metal-f0', type=float, default=1.5, help='base colour gain of metal pixels on the photo faces (the viewer\'s ASSUMED PHOTO_METAL_F0; 1 = the plain photo colour)')
+    ap.add_argument('--photo-metal-f0', type=float, default=1.5, help='base colour gain of metal pixels on the photo faces (the viewer\'s ASSUMED PHOTO_METAL_F0: 1.5 was its first value and stays the default the existing renders were made with; the viewer uses 1.2 now; 1 = the plain photo colour)')
     ap.add_argument('--match-photo', action='store_true', help='iterate the exposure until the plain solder mask matches gallery-1.jpg, then write it to --exposure-file pinned to the GLB '
                                                              '(with --all: calibrate both studios first, then render)')
     ap.add_argument('--match-size', default='960x540'); ap.add_argument('--match-samples', type=int, default=32)
