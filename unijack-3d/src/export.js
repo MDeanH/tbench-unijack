@@ -21,7 +21,9 @@ const LIGHTING_NOTE = 'Photo textures are exported at neutral albedo (base colou
   + 'colours were matched to the photos by mean luminance only (hue and highlights are approximate); other renderers should light the photo '
   + 'textures accordingly. The photographs already contain their own lighting and highlights. This file carries no lights. '
   + 'The metallic-roughness and normal textures of the photo materials are PHOTO-DERIVED by colour segmentation of the photographs (teal = solder mask, '
-  + 'white = silkscreen, grey = tin, black = IC body, tan = gold), not measured; metal pixels use the photo colour as their specular colour.';
+  + 'white = silkscreen, grey = tin, black = IC body, tan = gold, pale pixels enclosed by a black body = matte IC marking), not measured; the relief in the '
+  + 'normal textures is synthetic (silkscreen proud, pads below the mask); metal pixels use the photo colour as their specular colour. A grey plastic part '
+  + '(for example the SO-DIMM socket housing) therefore reads as metal. Each map has a provenance sidecar (assets/tex/derived/<map>.webp.json) in the source repository.';
 const COPYRIGHT = 'Illustrative model, NOT CAD. Photo textures are derived from the TBench / Crowd Supply gallery photographs; '
   + 'permission to redistribute them has not been confirmed.';
 const STATUS_KEY = {

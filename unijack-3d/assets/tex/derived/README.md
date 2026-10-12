@@ -2,12 +2,18 @@
 
 Written by `tools/derive-maps.py` from `assets/tex/*.webp`; same pixel grid as the photo textures. Status: **photo-derived**: the finishes are
 inferred from each pixel's colour, not measured. A white pixel gets the matte silkscreen finish whether it is silkscreen or white plastic; a grey
-pixel gets the metal finish whether it is a pad, a shield or a grey part. Nothing is added that the photo does not show.
+pixel gets the metal finish whether it is a pad, a shield or a grey part (known case: the grey plastic housing of the J400 SO-DIMM socket on base-top
+reads as metal), except where it is enclosed by a dark body (IC laser markings, highlights inside black housings: matte `marking` class). Nothing is
+added that the photo does not show.
+
+Every map has a provenance sidecar `<map>.webp.json` (generator and git commit, source texture and its sha256, every threshold and finish
+value, class fractions, creation time, disclosure). The maps are deterministic: re-running with unchanged thresholds reproduces them byte for byte.
 
 | file | channels | meaning |
 |---|---|---|
 | `<tex>-rm.webp` | G = roughness, B = metalness (R unused = 1) | three.js `roughnessMap` + `metalnessMap`; glTF metallicRoughness layout |
 | `<tex>-nrm.webp` | tangent-space normal (OpenGL +Y) | mild relief: silkscreen proud, pads and gold below the mask. Not generated for mercury-back (viewed from below, mirrored u). |
+| `<map>.webp.json` | JSON | provenance sidecar (see above) |
 | `<tex>-albedo.webp` | sRGB colour | only written with `--delight`; not used by the viewer (see "Delight pass" below) |
 
 ## Classes and finishes
@@ -15,10 +21,11 @@ pixel gets the metal finish whether it is a pad, a shield or a grey part. Nothin
 | class | rule (PIL HSV 0..255, smoothstep edges) | roughness | metalness | relief |
 |---|---|---|---|---|
 | mask | S [70, 110] and hue [112, 175] | 0.45 | 0.0 | +0.0 |
-| silk | S below [45, 100] and V [178, 205] | 0.78 | 0.0 | +1.0 |
-| tin | S below [45, 100], V above [75, 105] and below [178, 205] | 0.32 | 0.9 | -1.0 |
+| silk | S below [45, 100] and V [178, 205]; plus thin tin bands (no tin left after a 2 px erosion) within 2 px of a silk pixel and 3 px of mask (anti-aliased glyph edges, no metallic halo); minus white blobs enclosed by tin (pad highlights, which become tin) | 0.78 | 0.0 | +1.0 |
+| tin | S below [45, 100], V above [75, 105] and below [178, 205], not a thin band on a silk / mask boundary, not enclosed by dark; plus white blobs enclosed by tin (pad highlights) | 0.32 | 0.9 | -1.0 |
 | dark | S below [45, 100] and V below [75, 105] | 0.62 | 0.0 | +0.0 |
 | gold | S [55, 95], hue [4, 50], V [50, 90] | 0.3 | 0.9 | -0.6 (Mercury only; base-top and peri-top use roughness 0.4, metalness 0.5, relief -0.3: tan connector plastic is colour-identical to gold plating there, so a hedged half-metal finish) |
+| marking | tin or silk weight inside a hole of the dark mask (binary_fill_holes after a 2 px closing): laser markings on IC tops, pale pixels inside black housings | 0.6 | 0.0 | +0.0 |
 | other | remaining weight (ambiguous / coloured pixels) | 0.52 | 0.0 | +0.0 |
 
 ## Delight pass (measured, rejected by default)
@@ -37,65 +44,83 @@ Maps are anti-aliased with a 0.6 px Gaussian; the relief is smoothed with 1.0 px
 
 ## This run
 
-| texture | mask | silk | tin | dark | gold | other | mean roughness | mean metalness | max normal tilt | delight ratio range (raw) | clamped px |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| base-top | 0.604 | 0.081 | 0.157 | 0.112 | 0.030 | 0.015 | 0.478 | 0.144 | 32.6 | - | - |
-| peri-top | 0.522 | 0.239 | 0.106 | 0.073 | 0.040 | 0.019 | 0.525 | 0.111 | 32.7 | - | - |
-| mercury-front | 0.561 | 0.085 | 0.142 | 0.118 | 0.087 | 0.006 | 0.468 | 0.199 | 32.9 | - | - |
-| mercury-back | 0.679 | 0.116 | 0.097 | 0.018 | 0.082 | 0.008 | 0.47 | 0.146 | - | - | - |
+Commit `0ef39d8a0ffdf475627c2e035744a8b4594ad3ff` (dirty tree for the tool and textures), 2026-10-12T01:51:29+00:00.
+
+| texture | mask | silk | tin | dark | gold | marking | other | mean roughness | mean metalness | max normal tilt | delight ratio range (raw) | clamped px |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| base-top | 0.604 | 0.085 | 0.131 | 0.117 | 0.030 | 0.017 | 0.015 | 0.484 | 0.126 | 32.8 | - | - |
+| peri-top | 0.522 | 0.242 | 0.096 | 0.076 | 0.041 | 0.004 | 0.019 | 0.529 | 0.101 | 32.6 | - | - |
+| mercury-front | 0.561 | 0.081 | 0.129 | 0.120 | 0.087 | 0.015 | 0.006 | 0.471 | 0.188 | 32.8 | - | - |
+| mercury-back | 0.679 | 0.115 | 0.098 | 0.018 | 0.082 | 0.001 | 0.008 | 0.47 | 0.145 | - | - | - |
 
 ```json
 {
  "base-top": {
   "class_fraction": {
    "mask": 0.6037,
-   "silk": 0.0814,
-   "tin": 0.157,
-   "dark": 0.1122,
-   "gold": 0.0303,
+   "silk": 0.0851,
+   "tin": 0.1311,
+   "dark": 0.1174,
+   "gold": 0.0304,
+   "marking": 0.017,
    "other": 0.0154
   },
-  "roughness_mean": 0.478,
-  "metalness_mean": 0.144,
-  "normal_max_tilt_deg": 32.6
+  "roughness_mean": 0.484,
+  "metalness_mean": 0.126,
+  "pad_highlight_px": 26838,
+  "silk_halo_px": 87569,
+  "enclosed_by_dark_px": 23691,
+  "normal_max_tilt_deg": 32.8
  },
  "peri-top": {
   "class_fraction": {
    "mask": 0.5225,
-   "silk": 0.2389,
-   "tin": 0.1058,
-   "dark": 0.0734,
-   "gold": 0.0403,
+   "silk": 0.242,
+   "tin": 0.0959,
+   "dark": 0.0759,
+   "gold": 0.0405,
+   "marking": 0.0042,
    "other": 0.0191
   },
-  "roughness_mean": 0.525,
-  "metalness_mean": 0.111,
-  "normal_max_tilt_deg": 32.7
+  "roughness_mean": 0.529,
+  "metalness_mean": 0.101,
+  "pad_highlight_px": 20235,
+  "silk_halo_px": 129204,
+  "enclosed_by_dark_px": 17460,
+  "normal_max_tilt_deg": 32.6
  },
  "mercury-front": {
   "class_fraction": {
    "mask": 0.5615,
-   "silk": 0.0853,
-   "tin": 0.1423,
-   "dark": 0.1181,
+   "silk": 0.0806,
+   "tin": 0.1294,
+   "dark": 0.1205,
    "gold": 0.087,
-   "other": 0.0059
+   "marking": 0.0153,
+   "other": 0.0058
   },
-  "roughness_mean": 0.468,
-  "metalness_mean": 0.199,
-  "normal_max_tilt_deg": 32.9
+  "roughness_mean": 0.471,
+  "metalness_mean": 0.188,
+  "pad_highlight_px": 33841,
+  "silk_halo_px": 71992,
+  "enclosed_by_dark_px": 24925,
+  "normal_max_tilt_deg": 32.8
  },
  "mercury-back": {
   "class_fraction": {
    "mask": 0.6793,
-   "silk": 0.1162,
-   "tin": 0.0974,
-   "dark": 0.0176,
+   "silk": 0.1148,
+   "tin": 0.0976,
+   "dark": 0.0178,
    "gold": 0.0818,
-   "other": 0.0077
+   "marking": 0.0011,
+   "other": 0.0076
   },
   "roughness_mean": 0.47,
-  "metalness_mean": 0.146
+  "metalness_mean": 0.145,
+  "pad_highlight_px": 38737,
+  "silk_halo_px": 114558,
+  "enclosed_by_dark_px": 2196
  }
 }
 ```
