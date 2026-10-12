@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UniJack 3D model (illustrative)</title>
+<meta name="description" content="Rotatable, photo-anchored 3D model of the UniJack kit: base board, Mercury module and PeriBoard. Illustrative, not CAD.">
+<meta name="theme-color" content="#080b10">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="./src/viewer.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand"><span class="dot" aria-hidden="true"></span><span>UniJack</span><small>3D model &middot; illustrative</small></div>
+    <div class="top-actions" role="group" aria-label="View options">
+      <button class="chip" id="btn-labels" aria-pressed="false" title="Show the board designators printed on the PCBs">Labels</button>
+      <button class="chip" id="btn-rotate" aria-pressed="false">Auto-rotate</button>
+      <button class="chip" id="btn-explode" aria-pressed="false" title="Separate the boards along their mating axis">Exploded view</button>
+      <button class="chip" id="btn-env" aria-pressed="false" title="Show the kit on a white sweep like the photographs instead of the dark studio (both are rendering choices)">Backdrop</button>
+      <button class="chip" id="btn-parts" aria-expanded="false" aria-controls="parts-panel">Parts</button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="c" tabindex="0" aria-label="Interactive 3D model of the UniJack kit. Drag or use the arrow keys to rotate, plus and minus to zoom, Escape to close the part card."></canvas>
+    <div class="labels" id="labels" aria-hidden="true"></div>
+    <div class="loader" id="loader" role="status">Building model&hellip;</div>
+    <div class="fallback" id="fallback" hidden>
+      <img src="./assets/tex/base-top.webp" alt="Top-down photograph of the UniJack base board" width="1452" height="698">
+      <p id="fallback-msg">3D needs WebGL, which is unavailable in this browser. Showing the top-down photograph of the base board that the model uses.</p>
+    </div>
+    <div class="notice" id="gl-notice" role="alert" hidden>The 3D view lost its graphics context. It normally recovers by itself; if it stays blank, reload the page.</div>
+  </main>
+
+  <section class="dock" aria-label="Model controls">
+    <div class="row" role="group" aria-label="Camera views">
+      <button class="chip on" data-view="hero" aria-pressed="true">Hero</button>
+      <button class="chip" data-view="top" aria-pressed="false">Top</button>
+      <button class="chip" data-view="low" aria-pressed="false">Low</button>
+      <button class="chip" data-view="side" aria-pressed="false">Side</button>
+      <button class="chip" data-view="under" aria-pressed="false">Underside</button>
+    </div>
+    <div class="row" role="group" aria-label="Show parts">
+      <button class="chip on" data-show="base" aria-pressed="true">UniJack</button>
+      <button class="chip on" data-show="mercury" aria-pressed="true">Mercury</button>
+      <button class="chip on" data-show="peri" aria-pressed="true">PeriBoard</button>
+    </div>
+    <div class="sliders">
+      <div class="sl sl-ins">
+        <div class="sl-head"><label for="ins">Mercury insertion</label><output id="ins-out" for="ins" aria-live="off">Seated<span class="more">, latches closed</span></output></div>
+        <input id="ins" type="range" min="0" max="100" value="100" aria-valuetext="Seated, latches closed">
+      </div>
+      <button class="chip" id="btn-play">Play insertion</button>
+      <div class="sl sl-exp">
+        <div class="sl-head"><label for="exp">Explode</label><output id="exp-out" for="exp" aria-live="off">0%</output></div>
+        <input id="exp" type="range" min="0" max="100" value="0" aria-valuetext="0 percent, assembled">
+      </div>
+    </div>
+  </section>
+
+  <footer class="note">
+    <p class="short">Illustrative model built from TBench gallery photographs, not CAD. Assumed details are listed under About this model.</p>
+    <details class="about" id="about" open>
+      <summary>About this model</summary>
+      <div class="about-body">
+        <p>Board tops are the real photographs. Parts are extruded from footprints measured in the photos. Synthetic or assumed: part heights and plastic and metal colours; the PeriBoard stack height; PCB thickness; detail geometry such as connector contacts, IC leads, latch hooks and solder balls, and the micro-geometry that makes parts read as moulded, folded or soldered (the small rounded edges on housings, shells and IC bodies, the solder fillets at every lead and header foot, kept inside each lead's photographed outline, the pointed header-pin tips and the capacitor's bevelled rim: the photos show such features but none of their sizes, so typical values are used); the exploded view and the insertion motion (distances, the 28 degree angle and the latch travel); a cosmetic texture patch that is shown only while the latches are open; the surface finish (glossy solder mask, matte silkscreen, metallic pads and gold, matte IC markings), which is inferred from each pixel's colour in the photographs, not measured, with a typical reflectance assumed for the metal and a slight synthetic surface relief (silkscreen proud, pads below the mask); and the lighting: a synthetic studio (a large soft warm key, cool fill and rim, and a soft panel behind the kit that the glossy mask mirrors as a sheen), shown by default on a dark satin table with a graded dark backdrop and, with the Backdrop button, on a white sweep like the photographs (neither is the photographer's set-up; the sweep is drawn a little below paper white so the shadows stay visible), screen-space ambient occlusion, and a slight depth of field in the Hero view that is off while anything moves; the board colour was matched to the 3/4 photograph at two plain solder-mask patches by luminance only (within 10 percent; hue and highlights are approximate). Board sizes are photo-derived from standard-pitch features on each board (base about 160 by 87 mm, PeriBoard about 45 by 87 mm, Mercury about 35.5 by 69.6 mm, each within a few percent). The undersides of the base board and PeriBoard were not photographed and are shown plain. Mercury's back is photographed.</p>
+        <ul class="legend">
+          <li><i class="s ok" aria-hidden="true"></i><b>photo-verified:</b> the printed designator or marking is legible in a photo (shape is photo-derived, height assumed)</li>
+          <li><i class="s der" aria-hidden="true"></i><b>photo-derived:</b> footprint measured from a photo</li>
+          <li><i class="s ass" aria-hidden="true"></i><b>assumed:</b> not visible in any photo</li>
+        </ul>
+      </div>
+    </details>
+  </footer>
+
+  <div class="overlays">
+    <aside class="card" id="card" aria-live="polite" aria-label="Part information" hidden></aside>
+    <aside class="panel" id="parts-panel" aria-label="Parts list" hidden>
+      <div class="panel-head">
+        <input id="part-filter" type="search" placeholder="Filter parts (e.g. J303, RJ45)" aria-label="Filter parts">
+        <button class="x peek-toggle" id="parts-peek" aria-expanded="true" aria-controls="part-list" aria-label="Collapse the parts list"><span aria-hidden="true">&#9662;</span></button>
+        <button class="x" id="parts-close" aria-label="Close parts list"><span aria-hidden="true">&times;</span></button>
+      </div>
+      <p class="empty" id="part-empty" role="status" hidden>No matching parts.</p>
+      <div class="panel-list" id="part-list"></div>
+    </aside>
+  </div>
+</div>
+<noscript><p style="padding:2rem;color:#edf2f5">This viewer needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

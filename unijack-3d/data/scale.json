@@ -1,0 +1,129 @@
+{
+  "units": "mm",
+  "note": "PHOTO-DERIVED illustrative dimensions, not CAD. The flat-lay photo is a composite of separately scaled cut-outs, so each board is scaled from standard-pitch features on that board (see tools/pitch-check.py): base from a 0.5 mm-pitch quad-flat IC (anisotropic: x and z differ by ~11 percent), PeriBoard from 0.635 mm connector pitch, Mercury from its 0.5 mm contact pitch and 69.6 mm length. Part builders worked in the uniform model_px_per_mm; model.js rectifies each board with model/axis.",
+  "px_per_mm": {
+    "flat_lay": 8.721,
+    "macro": 22.529
+  },
+  "dims_mm": {
+    "base": [
+      159.5,
+      86.5
+    ],
+    "peri": [
+      45.2,
+      86.5
+    ],
+    "mercury": [
+      35.5,
+      69.6
+    ]
+  },
+  "tex_px": {
+    "base": [
+      1452,
+      698
+    ],
+    "peri": [
+      803,
+      1548
+    ],
+    "mercury": [
+      801,
+      1568
+    ]
+  },
+  "tex_px_per_mm": {
+    "base": 8.72,
+    "peri": 20,
+    "mercury": 22.53
+  },
+  "peri_ncc": 0.659,
+  "source_boxes": {
+    "flat_lay": {
+      "mod": [
+        368,
+        75,
+        681,
+        682
+      ],
+      "base": [
+        773,
+        32,
+        2225,
+        730
+      ],
+      "peri": [
+        2306,
+        43,
+        2656,
+        718
+      ]
+    },
+    "macro": {
+      "front": [
+        610,
+        60,
+        1406,
+        1623
+      ],
+      "back": [
+        1594,
+        50,
+        2392,
+        1623
+      ]
+    },
+    "peri_quad_in_gallery2": [
+      [
+        2064.0,
+        22.5
+      ],
+      [
+        2886.0,
+        58.5
+      ],
+      [
+        2914.5,
+        1620.0
+      ],
+      [
+        2073.0,
+        1624.5
+      ]
+    ]
+  },
+  "board_px_box": {
+    "base": [
+      25,
+      4,
+      1432,
+      691
+    ],
+    "peri": [
+      0,
+      28,
+      794,
+      1548
+    ]
+  },
+  "model_px_per_mm": {
+    "base": 8.72,
+    "peri": 20,
+    "mercury": 22.53
+  },
+  "axis_px_per_mm": {
+    "base": {
+      "x": 8.82,
+      "z": 7.94
+    },
+    "peri": {
+      "x": 17.57,
+      "z": 17.57
+    },
+    "mercury": {
+      "x": 22.53,
+      "z": 22.53
+    }
+  }
+}

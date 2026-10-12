@@ -1,0 +1,150 @@
+:root{color-scheme:dark;--bg:#080b10;--surface:#10151c;--surface2:#151c25;--ink:#edf2f5;--muted:#a0acb7;--faint:#8a99a8;--cyan:#74e2f4;--line:rgba(180,210,230,.16);--ok:#6fe39a;--der:#74e2f4;--ass:#ffc66b;--stage-h:400px}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}
+.app{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto auto;height:100%}
+/* explicit rows: the card and panel are laid over row 2, and auto-placement would otherwise push the stage out of it */
+.top{grid-row:1;grid-column:1}.stage{grid-row:2;grid-column:1}.dock{grid-row:3;grid-column:1}.note{grid-row:4;grid-column:1}
+
+/* ---- header ---- */
+.top{min-width:0;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;padding:10px 16px;border-bottom:1px solid var(--line);background:rgba(8,11,16,.85)}
+.brand{display:flex;align-items:baseline;gap:10px;font-weight:650;letter-spacing:-.02em;font-size:16px;flex:none}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 14px var(--cyan);align-self:center;flex:none}
+.brand small{color:var(--muted);font-weight:450;font-size:12px;letter-spacing:.02em;white-space:nowrap}
+.top-actions,.row{display:flex;gap:8px;flex-wrap:wrap;min-width:0}
+.top-actions{justify-content:flex-end}
+.chip{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:7px 13px;min-height:34px;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;flex:none;transition:border-color .15s,color .15s,background .15s}
+.chip:hover{color:var(--ink);border-color:rgba(116,226,244,.5)}
+.chip:disabled{opacity:.55;cursor:not-allowed}
+.chip:disabled:hover{color:var(--muted);border-color:var(--line)}
+.chip[aria-pressed="true"],.chip.on,.chip[aria-expanded="true"]{color:#061016;background:var(--cyan);border-color:var(--cyan);font-weight:650}
+
+/* keyboard focus: a ring on every stop. Rings sit outside the control, except where an ancestor clips
+   (scrolling list, the canvas inside the overflow-hidden stage, the card): those draw inset. */
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+#c:focus-visible{outline-width:3px;outline-offset:-4px}
+.panel-list button:focus-visible,.x:focus-visible,summary:focus-visible{outline-offset:-2px}
+
+/* ---- stage ---- */
+.stage{position:relative;min-height:0;overflow:hidden;background:radial-gradient(ellipse 70% 60% at 50% 35%,#0f1822 0%,var(--bg) 70%)}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c:active{cursor:grabbing}
+.labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.tag{position:absolute;transform:translate(-50%,-50%);font:600 10px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#061016;background:rgba(116,226,244,.92);padding:3px 5px;border-radius:4px;white-space:nowrap}
+.tag.board{background:rgba(237,242,245,.95);color:#0b1118;font:600 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:5px 9px;border-radius:999px;letter-spacing:.02em}
+.loader{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);letter-spacing:.04em;background:var(--bg);transition:opacity .4s}
+.loader.done{opacity:0;pointer-events:none}
+.fallback{position:absolute;inset:0;display:grid;place-content:center;gap:12px;padding:20px;text-align:center;background:var(--bg)}
+.fallback img{max-width:min(100%,900px);height:auto;border-radius:8px;border:1px solid var(--line);margin:0 auto}
+.fallback p{color:var(--muted);margin:0}
+.notice{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:3;width:max-content;max-width:calc(100% - 24px);background:rgba(16,21,28,.96);border:1px solid var(--ass);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--ink)}
+.app.no-gl .top-actions,.app.no-gl .dock{display:none}
+
+/* ---- info card and parts panel: grid items laid over the stage row (they come after the dock in DOM order) ---- */
+.overlays{display:contents}
+.card{position:relative;grid-row:2;grid-column:1;justify-self:start;align-self:end;margin:12px;z-index:6;width:min(340px,calc(100% - 24px));max-height:calc(100% - 24px);display:flex;flex-direction:column;overflow:hidden;background:rgba(16,21,28,.94);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(10px)}
+.card-in{overflow:auto;min-height:0;padding:12px 14px;overscroll-behavior:contain}
+.card h2{margin:0 0 6px;padding-right:26px;font-size:15px;font-weight:650;letter-spacing:-.01em;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.card .ref{font:600 11px ui-monospace,Menlo,Consolas,monospace;background:var(--surface2);border:1px solid var(--line);border-radius:5px;padding:2px 6px;color:var(--cyan)}
+.card p{margin:6px 0 0;color:var(--muted);font-size:13px}
+.card .dim{color:var(--faint);font-size:12px}
+.card .hid{color:var(--ink)}
+.st{font-size:11px;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:2px 8px;border:1px solid currentColor;font-weight:650}
+.st.photo-verified{color:var(--ok)}.st.photo-derived{color:var(--der)}.st.assumed{color:var(--ass)}
+.card .x{position:absolute;top:6px;right:6px;z-index:1}
+.x{background:none;border:0;color:var(--muted);font-size:22px;line-height:1;cursor:pointer;min-width:34px;min-height:34px;padding:0 6px;border-radius:8px;flex:none}
+.x:hover{color:var(--ink);background:var(--surface2)}
+.panel{grid-row:2;grid-column:1;justify-self:end;align-self:stretch;margin:12px;z-index:5;width:min(320px,calc(100% - 24px));display:flex;flex-direction:column;min-height:0;background:rgba(16,21,28,.95);border:1px solid var(--line);border-radius:12px;backdrop-filter:blur(10px);overflow:hidden}
+.panel-head{display:flex;gap:4px;align-items:center;padding:10px 8px 10px 10px;border-bottom:1px solid var(--line)}
+.panel-head input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px 10px;font:inherit;font-size:16px}
+.peek-toggle{display:none}
+.panel .empty{margin:0;padding:14px 16px;color:var(--muted);font-size:13px}
+.panel-list{overflow:auto;padding:6px 6px 12px;flex:1;min-height:0;overscroll-behavior:contain}
+.panel-list h3{margin:12px 8px 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:650}
+.panel-list button{display:flex;width:100%;gap:8px;align-items:baseline;text-align:left;background:none;border:0;color:var(--ink);padding:7px 8px;border-radius:8px;font:inherit;font-size:13px;cursor:pointer}
+.panel-list button:hover,.panel-list button.sel{background:var(--surface2)}
+.panel-list .r{font:600 11px ui-monospace,Menlo,Consolas,monospace;color:var(--cyan);min-width:46px;flex:none}
+.panel-list .t{flex:1;min-width:0}
+.panel-list .hid{display:block;color:var(--muted);font-size:11.5px;line-height:1.3}
+
+/* ---- dock ---- */
+.dock{display:grid;gap:8px;padding:10px 16px 6px;border-top:1px solid var(--line);background:rgba(8,11,16,.9)}
+.sliders{display:grid;grid-template-columns:minmax(170px,1fr) auto minmax(170px,1fr);align-items:end;gap:8px 14px}
+.sl{display:grid;gap:2px;font-size:12px;color:var(--muted);min-width:0}
+.sl-head{display:flex;justify-content:space-between;gap:10px}
+.sl output{color:var(--ink);text-align:right}
+input[type=range]{width:100%;accent-color:var(--cyan);height:28px;margin:0}
+
+/* ---- footer: short line always visible, the full disclosure in a details element ---- */
+.note{display:flex;flex-wrap:wrap;align-items:baseline;gap:0 14px;padding:6px 16px 10px;color:var(--faint);font-size:11.5px;line-height:1.4}
+.note .short{margin:0;flex:1 1 auto}
+.about{flex:0 0 auto;min-width:0}
+.about[open]{flex:1 1 100%}
+.about summary{cursor:pointer;color:var(--muted);font-weight:600;padding:5px 0}
+.about-body{max-height:34vh;overflow:auto;padding:2px 0 0}
+.about-body p{margin:0 0 8px}
+.legend{list-style:none;margin:0;padding:0;display:grid;gap:3px}
+.legend li{display:flex;gap:6px;align-items:baseline}
+.legend b{color:var(--muted);font-weight:600}
+.legend .s{flex:none;width:8px;height:8px;border-radius:50%}
+.s.ok{background:var(--ok)}.s.der{background:var(--der)}.s.ass{background:var(--ass)}
+
+/* ---- phones (portrait): header wraps onto two rows, panel is a bottom sheet with the card stacked above it ---- */
+@media (max-width:640px){
+  .top{padding:8px 12px;gap:6px 12px}
+  .brand{font-size:15px}
+  .brand small{display:none}
+  .top-actions{flex:1 1 100%;justify-content:stretch;gap:6px}
+  .chip{padding:5px 10px;font-size:12.5px}
+  .top-actions .chip,.row .chip{flex:1 1 auto}
+  .dock{padding:8px 12px 6px;gap:6px}
+  .row{gap:6px}
+  .sliders{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
+  .sl-exp{grid-column:1/-1}
+  .note{padding:4px 12px 8px;font-size:11px}
+}
+@media (max-width:380px){
+  .sl output .more{display:none}
+}
+@media (max-width:360px){
+  .top{padding:6px 12px;gap:5px 10px}
+  .top-actions{gap:5px}
+  .chip{padding:3px 8px;font-size:12px;min-height:29px}   /* five header chips wrap onto two rows here: keep the rows short so the model keeps its share of the height */
+  .dock{gap:5px;padding:6px 12px 4px}
+}
+@media (max-width:640px) and (min-height:521px){
+  .overlays{display:flex;flex-direction:column;grid-row:2;grid-column:1;align-self:end;justify-self:stretch;min-height:0;max-height:100%;z-index:6;pointer-events:none}
+  .overlays>*{pointer-events:auto}
+  .card{margin:0 8px 8px;width:auto;max-height:calc(var(--stage-h)*.42);flex:0 1 auto;min-height:0;align-self:stretch;justify-self:auto}
+  .panel{margin:0;width:auto;border-radius:14px 14px 0 0;border-bottom:0;height:clamp(200px,calc(var(--stage-h)*.6),460px);max-height:calc(var(--stage-h) - 44px);flex:none;align-self:stretch;justify-self:auto}
+  .panel.peek{height:auto}
+  .panel.peek .panel-list,.panel.peek .empty{display:none}
+  .peek-toggle{display:inline-block}
+  .panel.peek .peek-toggle span{display:inline-block;transform:rotate(180deg)}
+  .card h2{font-size:14px}
+  .card .ref,.st{font-size:10.5px}
+  .card p{font-size:12.5px;margin-top:4px}
+  .card-in{padding:10px 12px}
+}
+
+/* ---- short viewports (landscape phones): compact single-row dock, footnote behind the disclosure ---- */
+@media (max-height:520px){
+  .top{padding:5px 12px}
+  .chip{min-height:30px;padding:4px 10px;font-size:12px}
+  .dock{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px 12px;padding:5px 12px 3px}
+  .dock .row{flex:0 1 auto;gap:6px}
+  .sliders{flex:1 1 380px;grid-template-columns:minmax(110px,1fr) auto minmax(110px,1fr);gap:6px 10px}
+  .sl-exp{grid-column:auto}
+  .sl{font-size:11.5px;gap:0}
+  input[type=range]{height:20px}
+  .note{padding:2px 12px 3px;font-size:11px;line-height:1.3}
+  .about summary{padding:3px 0}
+  .about-body{max-height:30vh}
+  .card{margin:8px;width:min(300px,calc(100% - 16px));max-height:calc(100% - 16px)}
+  .card-in{padding:8px 12px}
+  .card p{font-size:12.5px;margin-top:4px}
+  .panel{margin:8px;width:min(260px,calc(100% - 16px))}
+  .panel-head{padding:6px 6px 6px 8px}
+  .panel-head input{padding:5px 8px;font-size:14px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

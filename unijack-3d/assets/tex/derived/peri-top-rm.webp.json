@@ -1,0 +1,118 @@
+{
+ "file": "peri-top-rm.webp",
+ "kind": "roughness-metalness",
+ "channels": "R = 1 (unused), G = roughness, B = metalness",
+ "meaning": "three.js roughnessMap + metalnessMap; glTF metallicRoughness layout",
+ "status": "photo-derived",
+ "generator": {
+  "tool": "unijack-3d/tools/derive-maps.py",
+  "commit": "b26def303c0b351589e869fdfc79d63dfd6699e8",
+  "tree": "clean",
+  "args": []
+ },
+ "source": {
+  "texture": "assets/tex/peri-top.webp",
+  "sha256": "a41ec26a615f9aa1cff81f79cfebbc7bd19ed5f19864b5a22e3877635785a98f",
+  "size_px": [
+   803,
+   1548
+  ]
+ },
+ "method": {
+  "segmentation": "PIL HSV (0..255) soft classes with smoothstep edges; weights normalised per pixel",
+  "thresholds": {
+   "mask_sat": [
+    70,
+    110
+   ],
+   "mask_hue": [
+    112,
+    175
+   ],
+   "gold_sat": [
+    55,
+    95
+   ],
+   "gold_hue": [
+    4,
+    50
+   ],
+   "gold_val": [
+    50,
+    90
+   ],
+   "lowsat": [
+    45,
+    100
+   ],
+   "silk_val": [
+    178,
+    205
+   ],
+   "tin_val": [
+    75,
+    105
+   ],
+   "dark_val": [
+    75,
+    105
+   ]
+  },
+  "finish_roughness_metalness_relief": {
+   "mask": [
+    0.45,
+    0.0,
+    0.0
+   ],
+   "silk": [
+    0.78,
+    0.0,
+    1.0
+   ],
+   "tin": [
+    0.32,
+    0.9,
+    -1.0
+   ],
+   "dark": [
+    0.62,
+    0.0,
+    0.0
+   ],
+   "gold": [
+    0.4,
+    0.5,
+    -0.3
+   ],
+   "marking": [
+    0.6,
+    0.0,
+    0.0
+   ],
+   "other": [
+    0.52,
+    0.0,
+    0.0
+   ]
+  },
+  "pad_highlight_rule": "silk weight inside holes of the tin mask after a 1 px closing -> tin",
+  "silk_halo_px": 2,
+  "silk_halo_mask_px": 3,
+  "silk_halo_excludes": "tin within 1 px of the tin mask eroded by 2 px",
+  "marking_rule": "tin/silk weight inside holes of the dark mask after a 2 px closing -> marking",
+  "speckle_filter_px": 3,
+  "clean_sigma_px": 0.6,
+  "encoding": "lossless WebP, 8 bit per channel (exact)"
+ },
+ "class_fraction": {
+  "mask": 0.5225,
+  "silk": 0.242,
+  "tin": 0.0959,
+  "dark": 0.0759,
+  "gold": 0.0405,
+  "marking": 0.0042,
+  "other": 0.0191
+ },
+ "created": "2026-10-12T03:06:49+00:00",
+ "disclosure": "Photo-derived, not measured: this map re-weights the pixels of the photo texture it was segmented from by their colour (teal = solder mask, white = silkscreen, grey = tin, black = IC body, tan = gold, pale pixels enclosed by a black body = matte marking). A white pixel is treated as silkscreen whether it is silkscreen or white plastic, a grey pixel as metal whether it is a pad or a grey part. Nothing is added that the photograph does not show."
+}

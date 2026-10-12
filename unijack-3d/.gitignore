@@ -1,0 +1,10 @@
+node_modules/
+*.tmp
+qa-out/
+.DS_Store
+source-photos/
+dist/
+assets/*.glb
+renders/
+__pycache__/
+venv-bpy/
