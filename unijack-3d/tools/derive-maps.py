@@ -39,6 +39,8 @@ Outputs on the SAME pixel grid, under assets/tex/derived/:
   README.md          the thresholds, class fractions and (with --delight) the delight statistics of this run
 
 The maps are deterministic: re-running with unchanged thresholds reproduces them byte for byte (only the sidecars' `created` changes).
+The -rm and -nrm maps are written as LOSSLESS WebP (they are data, not pictures): what the file holds is exactly the quantised 8-bit map, R = 255 everywhere
+in -rm. (Until 2026-10-12 they were lossy WebP at quality 92/95, whose 4:2:0 chroma subsampling put errors of up to 0.48 into the metalness channel.)
 
 Honesty: every map is PHOTO-DERIVED by colour segmentation of the photo. A pixel that is white gets a matte silkscreen finish whether it is
 silkscreen or a white plastic housing; a grey pixel gets a metal finish whether it is a pad or a grey plastic part (the J400 SO-DIMM socket's
@@ -179,7 +181,7 @@ def write_sidecar(map_path, name, kind, channels, meaning, src, size, finish_t, 
             'thresholds': T,
             'finish_roughness_metalness_relief': {k: list(v) for k, v in finish_t.items()},
             'pad_highlight_rule': 'silk weight inside holes of the tin mask after a 1 px closing -> tin', 'silk_halo_px': HALO_PX, 'silk_halo_mask_px': HALO_MASK_PX, 'silk_halo_excludes': 'tin within 1 px of the tin mask eroded by 2 px', 'marking_rule': f'tin/silk weight inside holes of the dark mask after a {ENCLOSE_CLOSE_PX} px closing -> marking',
-            'speckle_filter_px': 3, 'clean_sigma_px': SIGMA_CLEAN,
+            'speckle_filter_px': 3, 'clean_sigma_px': SIGMA_CLEAN, 'encoding': 'lossless WebP, 8 bit per channel (exact)',
             **({'normal': {'relief_sigma_px': SIGMA_HEIGHT, 'slope_per_px': 0.9 * nstrength, 'convention': 'tangent space, OpenGL +Y (v up)'}} if kind == 'normal' else {}),
         },
         'class_fraction': rep['class_fraction'],
@@ -206,7 +208,7 @@ def derive(name, delight=True, nstrength=1.0, created=None, git=('unknown', 'unk
     rm = np.stack([np.full_like(rough, 1.0), rough, metal], axis=-1)
     os.makedirs(OUT, exist_ok=True)
     rm_path = os.path.join(OUT, name + '-rm.webp')
-    Image.fromarray((np.clip(rm, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGB').save(rm_path, quality=92, method=6)
+    Image.fromarray((np.clip(rm, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGB').save(rm_path, lossless=True, quality=100, method=6)   # data map: lossless (a lossy 4:2:0 WebP put errors of up to 0.48 into the metalness channel and R was no longer 1)
 
     rep = {'class_fraction': {k: round(v, 4) for k, v in frac.items()}, 'roughness_mean': round(float(rough.mean()), 3), 'metalness_mean': round(float(metal.mean()), 3),
            'pad_highlight_px': morph['pad_highlight_px'], 'silk_halo_px': morph['halo_px'], 'enclosed_by_dark_px': morph['enclosed_px']}
@@ -222,7 +224,7 @@ def derive(name, delight=True, nstrength=1.0, created=None, git=('unknown', 'unk
         nx, ny, nz = -k * dx, +k * dy, np.ones_like(dx)
         n = np.stack([nx, ny, nz], axis=-1); n /= np.linalg.norm(n, axis=-1, keepdims=True)
         nrm_path = os.path.join(OUT, name + '-nrm.webp')
-        Image.fromarray((np.clip(n * 0.5 + 0.5, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGB').save(nrm_path, quality=95, method=6)
+        Image.fromarray((np.clip(n * 0.5 + 0.5, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGB').save(nrm_path, lossless=True, quality=100, method=6)   # data map: lossless
         rep['normal_max_tilt_deg'] = round(float(np.degrees(np.arccos(n[..., 2].min()))), 1)
         write_sidecar(nrm_path, name, 'normal', 'RGB = tangent-space normal * 0.5 + 0.5 (OpenGL +Y)',
                       'mild synthetic relief: silkscreen proud (+1), tin pads below the mask (-1), gold below (-0.6 / -0.3); markings and IC bodies flat',
@@ -272,8 +274,8 @@ def main():
              'Every map has a provenance sidecar `<map>.webp.json` (generator and git commit, source texture and its sha256, every threshold and finish',
              'value, class fractions, creation time, disclosure). The maps are deterministic: re-running with unchanged thresholds reproduces them byte for byte.', '',
              '| file | channels | meaning |', '|---|---|---|',
-             '| `<tex>-rm.webp` | G = roughness, B = metalness (R unused = 1) | three.js `roughnessMap` + `metalnessMap`; glTF metallicRoughness layout |',
-             '| `<tex>-nrm.webp` | tangent-space normal (OpenGL +Y) | mild relief: silkscreen proud, pads and gold below the mask. Not generated for mercury-back (viewed from below, mirrored u). |',
+             '| `<tex>-rm.webp` | G = roughness, B = metalness (R unused = 1) | three.js `roughnessMap` + `metalnessMap`; glTF metallicRoughness layout. Lossless WebP: the file holds the 8-bit map exactly |',
+             '| `<tex>-nrm.webp` | tangent-space normal (OpenGL +Y) | mild relief: silkscreen proud, pads and gold below the mask. Not generated for mercury-back (viewed from below, mirrored u). Lossless WebP |',
              '| `<map>.webp.json` | JSON | provenance sidecar (see above) |',
              '| `<tex>-albedo.webp` | sRGB colour | only written with `--delight`; not used by the viewer (see "Delight pass" below) |', '',
              '## Classes and finishes', '', '| class | rule (PIL HSV 0..255, smoothstep edges) | roughness | metalness | relief |', '|---|---|---|---|---|']
