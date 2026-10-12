@@ -1,0 +1,370 @@
+{
+  "dark/AgX/AgX - Base Contrast": {
+    "exposure": -0.589,
+    "view_transform": "AgX",
+    "look": "AgX - Base Contrast",
+    "photo_patches_sRGB": {
+      "A": [
+        12.2,
+        150.8,
+        188.8
+      ],
+      "B": [
+        4.3,
+        132.4,
+        170.2
+      ]
+    },
+    "render_patches_sRGB": {
+      "A": [
+        41.8,
+        134.8,
+        166.8
+      ],
+      "B": [
+        64.5,
+        146.7,
+        177.5
+      ]
+    },
+    "history": [
+      {
+        "iteration": 0,
+        "exposure": 0.0,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              82.2,
+              155.2,
+              185.0
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              98.0,
+              165.8,
+              194.5
+            ]
+          }
+        },
+        "render_lum": 0.31264,
+        "photo_lum": 0.22681,
+        "step_stops": -0.463,
+        "seconds": 30.0
+      },
+      {
+        "iteration": 1,
+        "exposure": -0.417,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              56.6,
+              141.2,
+              172.4
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              74.5,
+              152.5,
+              183.0
+            ]
+          }
+        },
+        "render_lum": 0.25237,
+        "photo_lum": 0.22681,
+        "step_stops": -0.154,
+        "seconds": 31.9
+      },
+      {
+        "iteration": 2,
+        "exposure": -0.555,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              43.8,
+              136.2,
+              167.8
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              66.5,
+              147.8,
+              178.5
+            ]
+          }
+        },
+        "render_lum": 0.23271,
+        "photo_lum": 0.22681,
+        "step_stops": -0.037,
+        "seconds": 30.7
+      },
+      {
+        "iteration": 3,
+        "exposure": -0.589,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              41.8,
+              134.8,
+              166.8
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              64.5,
+              146.7,
+              177.5
+            ]
+          }
+        },
+        "render_lum": 0.22809,
+        "photo_lum": 0.22681,
+        "step_stops": -0.008,
+        "seconds": 31.5
+      }
+    ],
+    "method": "mean luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at 960x540 with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg"
+  },
+  "white/AgX/AgX - Base Contrast": {
+    "exposure": -0.868,
+    "view_transform": "AgX",
+    "look": "AgX - Base Contrast",
+    "photo_patches_sRGB": {
+      "A": [
+        12.2,
+        150.8,
+        188.8
+      ],
+      "B": [
+        4.3,
+        132.4,
+        170.2
+      ]
+    },
+    "render_patches_sRGB": {
+      "A": [
+        60.6,
+        134.4,
+        163.6
+      ],
+      "B": [
+        73.7,
+        146.3,
+        174.7
+      ]
+    },
+    "history": [
+      {
+        "iteration": 0,
+        "exposure": 0.0,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              105.8,
+              163.8,
+              189.4
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              118.2,
+              174.0,
+              198.5
+            ]
+          }
+        },
+        "render_lum": 0.3573,
+        "photo_lum": 0.22681,
+        "step_stops": -0.656,
+        "seconds": 19.9
+      },
+      {
+        "iteration": 1,
+        "exposure": -0.59,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              74.6,
+              144.4,
+              172.4
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              89.8,
+              155.5,
+              183.2
+            ]
+          }
+        },
+        "render_lum": 0.26871,
+        "photo_lum": 0.22681,
+        "step_stops": -0.245,
+        "seconds": 20.2
+      },
+      {
+        "iteration": 2,
+        "exposure": -0.81,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              63.6,
+              136.4,
+              165.6
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              76.8,
+              148.0,
+              176.5
+            ]
+          }
+        },
+        "render_lum": 0.2372,
+        "photo_lum": 0.22681,
+        "step_stops": -0.065,
+        "seconds": 20.0
+      },
+      {
+        "iteration": 3,
+        "exposure": -0.868,
+        "render_patches": {
+          "A": {
+            "pixel_box": [
+              293,
+              147,
+              298,
+              148
+            ],
+            "n": 5,
+            "mean_sRGB": [
+              60.6,
+              134.4,
+              163.6
+            ]
+          },
+          "B": {
+            "pixel_box": [
+              281,
+              143,
+              284,
+              145
+            ],
+            "n": 6,
+            "mean_sRGB": [
+              73.7,
+              146.3,
+              174.7
+            ]
+          }
+        },
+        "render_lum": 0.22992,
+        "photo_lum": 0.22681,
+        "step_stops": -0.02,
+        "seconds": 20.3
+      }
+    ],
+    "method": "mean luminance (Rec.709 from sRGB) of plain solder-mask patches A and B, rendered at 960x540 with the hero camera, vs the same physical patches in source-photos/gallery-1.jpg"
+  }
+}

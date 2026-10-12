@@ -43,6 +43,7 @@ from any other angle.
 | Texture patch under the socket latches | **synthetic**. The flat-lay photo has the closed latch arms baked in; while the latches are open a small patch cloned from a plain region of the board covers those pixels. It is hidden whenever the latches are closed. |
 | Lighting and colour | The viewer relights the photographs; the photo material's gain was calibrated so a top-down render matches the photo's mean luminance (ratio 0.97). Hue and highlights are approximate. |
 | Undersides of the base board and PeriBoard | **not photographed**, shown plain. Mercury's back is photographed and shown. |
+| Offline Cycles stills (`renders/`, made by `tools/blender/render.py` from the exported GLB) | **synthetic studio**: the three area lights, gradient world, ground plane, camera, depth and the gloss/coat added to the mask and plastics are render choices, not the photographs' lighting. Exposure is matched so a plain solder-mask patch has the mean luminance of the same patch in `gallery-1.jpg` (hue still differs: the rendered mask reads lighter and less saturated, the measured numbers are in each render's sidecar `.json`). Every render has a sidecar with the model commit, GLB checksum, all settings and the disclosure sentence. Same geometry, same assumed heights and colours as the viewer. |
 | Function of any part | inferred from shape only ("appears to be ...") |
 
 Nothing in this model is a vendor-supplied mechanical specification. When Jens supplies a STEP file or the KiCad/Altium project, replace
@@ -61,6 +62,8 @@ tools/extract.py                          photos -> textures + scale.json   (nee
 tools/qa-render.mjs, overlay.py, crop.py  headless QA renders, footprint-vs-photo overlay, zoom-with-grid
 tools/viewer-shots.mjs                    end-to-end viewer test (clicks the UI, screenshots, console errors)
 tools/export-glb.mjs                      exports assets/unijack.glb (named nodes, metadata in glTF extras)
+tools/blender/render.py                   offline photoreal stills with Blender Cycles from the GLB (see tools/blender/README.md)
+renders/                                  Cycles stills + provenance sidecars (not committed)
 CONTRACT.md                               rules for part builders
 ```
 
@@ -71,6 +74,7 @@ npm install                                   # playwright-core, three (dev)
 node tools/qa-render.mjs --only=all --suite   # standard QA views into qa-out/
 node tools/viewer-shots.mjs                   # drive the UI, save screenshots, report errors
 node tools/export-glb.mjs                     # write assets/unijack.glb
+<venv-bpy>/bin/python -I tools/blender/render.py --view hero --samples 192 --size 1920x1080   # Cycles still (needs the bpy wheel, see tools/blender/README.md)
 ```
 
 The QA tools render with software WebGL (SwiftShader) so they run without a GPU, in a container or CI.
@@ -86,6 +90,7 @@ The viewer is marked `noindex` while it is a work in progress.
 
 * Tiny passives (0402 and smaller) are texture-only; larger parts have real geometry.
 * Real-time lighting cannot reproduce macro depth of field or the cinematic look of an offline render. This is a viewer, not the
-  promotional film; the film should be rendered offline from real CAD or from this GLB.
+  promotional film; the film should be rendered offline from real CAD or from this GLB. `tools/blender/render.py` makes path-traced stills
+  from the GLB with the viewer's camera presets (about 7 to 9 minutes per 1080p hero frame on 4 CPU cores, 3 to 6 minutes for the other views).
 * Tall parts at the photo edge (RJ45, USB-A, barrel jack, terminal, mini- and micro-USB) show some of their own side faces in their top-face pixels (the flat lay is a perspective photo); their PCB-level footprints are displaced by a fraction of a millimetre.
 * Not yet tested on a real GPU, in Safari or on iOS.
