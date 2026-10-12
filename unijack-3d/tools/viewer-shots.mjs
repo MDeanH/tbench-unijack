@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 // End-to-end viewer check (software WebGL). Loads the page, drives the UI like a user, saves screenshots and reports
 // console errors AND warnings, horizontal overflow, clipped or overlapping controls, the canvas height fraction, the parts panel and
-// info card geometry, keyboard focus on every tab stop, label occlusion, hidden-part fly-to, reduced motion, context loss and the no-WebGL fallback.
+// info card geometry, keyboard focus on every tab stop, label occlusion, hidden-part fly-to, the Backdrop (white sweep) toggle, reduced motion,
+// context loss and the no-WebGL fallback.
 //
 //   node tools/viewer-shots.mjs [--dir=qa-out/viewer] [--page=index.html]
 //        [--widths=320,360,390,768,1024,1440] [--sizes=667x375,844x390,1366x657]    layout checks at these viewports (defaults shown)
 //        [--flow=0]   skip the long desktop/mobile interaction flow         [--extra=0]   skip keyboard / reduced-motion / context-loss / no-WebGL sessions
+//        [--env=0]    skip the Backdrop (sweep) sessions
 // Prints a JSON report and a final "FAILED CHECKS" list (exit code 1 if any check failed).
+// Timing: software WebGL renders a frame in seconds, so after anything that animates the script waits on window.__unijack.busy() (camera tween,
+// explode tween, insertion play, damping) plus a short grace, never on a fixed delay; screenshots after a change wait for a fresh rendered frame.
 import { chromium } from 'playwright-core';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -34,17 +38,19 @@ const GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-
 const browser = await chromium.launch({ executablePath: exe, args: GL });
 fs.mkdirSync(OUT, { recursive: true });
 const report = [], failures = [];
-const settled = async (page, extra = 150) => { await page.waitForFunction(() => !window.__unijack.busy(), null, { timeout: 60000 }); await page.waitForTimeout(extra); };   // camera tween, explode and insertion animations finished
+const settled = async (page, extra = 150) => { await page.waitForFunction(() => !window.__unijack.busy(), null, { timeout: 120000 }); await page.waitForTimeout(extra); };   // camera tween, explode and insertion animations finished
+// ask the viewer for a frame and wait until it has rendered one (the loop renders on demand; a screenshot right after a change could show the old frame)
+const freshFrame = async (page) => { const n = await page.evaluate(() => { const U = window.__unijack, n = U.frames; U.controls.dispatchEvent({ type: 'change' }); return n; }); await page.waitForFunction((n) => window.__unijack.frames > n, n, { timeout: 120000 }); };
 const openPanel = async (page) => { if (await page.locator('#parts-panel').isHidden()) { await page.click('#btn-parts'); await page.waitForTimeout(300); } };   // the UI closes the panel after a selection on short stages
 const check = (where, name, ok, detail) => { if (!ok) failures.push(`${where}: ${name}${detail !== undefined ? ' -> ' + JSON.stringify(detail) : ''}`); return ok; };
 
 // console output: errors and warnings are both kept; GL driver chatter from software rendering is listed apart so it cannot hide a real warning
 const isDriverMsg = (t) => /GL Driver Message|GPU stall|\[\.WebGL|swiftshader|Automatic fallback to software WebGL/i.test(t);
-async function session(name, ctxOpts, script, { gl = true } = {}) {
+async function session(name, ctxOpts, script, { gl = true, query = '' } = {}) {
   const ctx = await browser.newContext(ctxOpts); const page = await ctx.newPage(); const errors = [], warnings = [], driver = [];
   page.on('console', (m) => { const t = m.text().slice(0, 260); if (m.type() === 'error') errors.push(t); else if (m.type() === 'warning') (isDriverMsg(t) ? driver : warnings).push(t); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + String(e).slice(0, 240)));
-  await page.goto(base + PAGE);
+  await page.goto(base + PAGE + query);
   if (gl) await page.waitForFunction(() => window.__viewerReady, null, { timeout: 180000 });
   const shot = async (n, opts = {}) => page.screenshot({ path: path.join(OUT, `${name}-${n}.png`), ...opts });
   const entry = { name, result: {} }; report.push(entry);
@@ -107,6 +113,23 @@ const visibleShare = (partLabel) => {
   const b = new T.Box3().setFromObject(part).getCenter(c).project(cam);
   return { samples: pts.length, visible: vis, share: pts.length ? +(vis / pts.length).toFixed(2) : 0, ndc: [+b.x.toFixed(2), +b.y.toFixed(2)] };
 };
+// colour statistics of the live canvas: the solder-mask pixels (teal: saturated, blue well above red, the same classifier as tools/colorcal.py) and the
+// backdrop in the top-left corner. Read in the rAF callback that follows the viewer's own loop, while the frame's drawing buffer is still intact.
+const samplePixels = () => new Promise((resolve) => {
+  const U = window.__unijack, c = document.getElementById('c'), n0 = U.frames; U.controls.dispatchEvent({ type: 'change' });
+  const tick = () => {
+    if (U.frames === n0) return requestAnimationFrame(tick);
+    const w = c.width, h = c.height, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const g = cv.getContext('2d'); g.drawImage(c, 0, 0); const d = g.getImageData(0, 0, w, h).data;
+    let n = 0, r = 0, gg = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { const R = d[i], G = d[i + 1], B = d[i + 2], mx = Math.max(R, G, B), mn = Math.min(R, G, B); if (mx > 0 && (mx - mn) / mx > 0.45 && B > R + 25) { n++; r += R; gg += G; b += B; } }
+    const px = (x, y) => { const i = ((Math.round(y * h) * w) + Math.round(x * w)) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const mean = n ? [r / n, gg / n, b / n] : [0, 0, 0];
+    resolve({ teal: n, mean: mean.map((v) => +v.toFixed(1)), lum: +(0.2126 * lin(mean[0]) + 0.7152 * lin(mean[1]) + 0.0722 * lin(mean[2])).toFixed(4), corner: px(0.04, 0.08), size: [w, h] });
+  };
+  requestAnimationFrame(tick);
+});
 
 // ---------- 1. layout at every viewport ----------
 for (const [w, h] of sizes) {
@@ -134,12 +157,12 @@ for (const [w, h] of sizes) {
       const f = res.framing[v]; check(name, `preset ${v} fits the canvas`, f[0] >= -1 && f[1] <= 1 && f[2] >= -1 && f[3] <= 1, f);
       if (v === 'under') { const n = await page.evaluate(() => document.querySelectorAll('.tag:not(.board):not([hidden])').length); res.underTags = n; }
     }
-    await page.click('[data-view="hero"]'); await page.waitForTimeout(1300);
+    await page.click('[data-view="hero"]'); await settled(page);
     // parts panel: open, pick a part with a designator, look at the panel, card and the part's place on screen
     await page.click('#btn-parts'); await page.waitForTimeout(500);
     res.panelOpen = await page.evaluate(`(${partProbe.toString()})()`); await shot('2-panel-open');
     await page.evaluate(() => { const b = [...document.querySelectorAll('#part-list button')].find((x) => x.querySelector('.r')?.textContent === 'J303'); b.scrollIntoView({ block: 'center' }); });
-    await page.locator('#part-list button', { hasText: 'J303' }).first().click(); await page.waitForTimeout(1500);
+    await page.locator('#part-list button', { hasText: 'J303' }).first().click(); await settled(page);
     const P = res.afterPick = await page.evaluate(`(${partProbe.toString()})()`); await shot('3-part-selected');
     check(name, 'info card appears', P.cardShown); check(name, 'card inside the stage (not clipped)', P.cardInStage === true, P.card); check(name, 'card title visible', P.cardTitleVisible === true);
     check(name, 'card is on top at its centre', P.cardOnTop === true); check(name, 'card does not overlap the panel', P.cardOverlapsPanel !== true, [P.card, P.panel]);
@@ -154,7 +177,7 @@ for (const [w, h] of sizes) {
       if (await page.locator('#parts-panel').isHidden()) { await page.click('#btn-parts'); await page.waitForTimeout(300); }   // the phone UI closes the panel after a selection when the stage is short
       await page.evaluate(() => { document.getElementById('parts-panel').classList.remove('peek'); const i = document.getElementById('part-filter'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); });
       await openPanel(page); await page.fill('#part-filter', target[0].slice(0, 14)); await page.waitForTimeout(200);
-      await page.locator('#part-list button:not([hidden])', { hasText: target[1] }).first().click(); await page.waitForTimeout(2600);
+      await page.locator('#part-list button:not([hidden])', { hasText: target[1] }).first().click(); await settled(page, 300);   // explode tween + camera tween, however slow the frames
       const hv = res.hiddenPick = { part: target, explode: await page.evaluate(() => window.__unijack.kit.state.explode), vis: await page.evaluate(visibleShare, target[0]), card: await page.evaluate(`(${partProbe.toString()})()`) };
       await shot('4-hidden-part');
       check(name, 'hidden part: kit auto-exploded', hv.explode > 0.95, hv.explode); check(name, 'hidden part: visible from the final camera', hv.vis.share > 0, hv.vis);
@@ -168,26 +191,30 @@ if (args.flow !== '0' && args.flow !== 0) {
   await session('desktop', { viewport: { width: 1440, height: 900 } }, async (page, shot, res) => {
     await page.evaluate(`window.__h = (${pageHelpers.toString()})()`);
     await page.evaluate(() => { window.__unijack.controls.autoRotate = false; });   // deterministic frames
-    await page.waitForTimeout(1200); await shot('1-hero');
-    await page.click('#btn-explode'); await page.waitForTimeout(3200); await shot('2-exploded');
+    await settled(page); await freshFrame(page); await shot('1-hero');
+    await page.click('#btn-explode'); await settled(page); await shot('2-exploded');
     res.explodePressed = { v: await page.getAttribute('#btn-explode', 'aria-pressed'), slider: await page.inputValue('#exp'), valuetext: await page.getAttribute('#exp', 'aria-valuetext'), state: await page.evaluate(() => window.__unijack.kit.state) };
     check('desktop', 'explode button pressed after explode', res.explodePressed.v === 'true');
-    await page.click('#btn-explode'); await page.waitForTimeout(3200);
+    await page.click('#btn-explode'); await settled(page);
     res.unexplode = { slider: await page.inputValue('#exp'), pressed: await page.getAttribute('#btn-explode', 'aria-pressed') }; check('desktop', 'un-explode returns to 0', res.unexplode.slider === '0' && res.unexplode.pressed === 'false', res.unexplode);
     // the 50 percent edge: button state and its next action must agree
     await page.evaluate(() => { const i = document.querySelector('#exp'); i.value = 50; i.dispatchEvent(new Event('input', { bubbles: true })); });
-    const half0 = await page.getAttribute('#btn-explode', 'aria-pressed'); await page.click('#btn-explode'); await page.waitForTimeout(3000);
+    const half0 = await page.getAttribute('#btn-explode', 'aria-pressed'); await page.click('#btn-explode'); await settled(page);
     res.half = { pressedAt50: half0, sliderAfterClick: await page.inputValue('#exp'), pressedAfter: await page.getAttribute('#btn-explode', 'aria-pressed') };
     check('desktop', 'explode at 50%: a pressed button un-explodes', half0 !== 'true' || res.half.sliderAfterClick === '0', res.half);
     await page.evaluate(() => { const i = document.querySelector('#exp'); i.value = 0; i.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.evaluate(() => { const i = document.querySelector('#ins'); i.value = 40; i.dispatchEvent(new Event('input', { bubbles: true })); });
-    await page.waitForTimeout(800); await shot('3-insertion-40'); res.insValuetext = await page.getAttribute('#ins', 'aria-valuetext');
-    // exploded, then "Play insertion": the explosion closes up (animated), then Mercury slides in
-    await page.evaluate(() => window.__unijack.explodeTo(1)); await page.waitForTimeout(1800);
-    await page.click('#btn-play'); await page.waitForTimeout(450);
-    const mid = await page.evaluate(() => window.__unijack.kit.state.explode); await page.waitForTimeout(6000);
-    res.playWhileExploded = { explodeMid: +mid.toFixed(2), explodeEnd: await page.evaluate(() => window.__unijack.kit.state.explode), insertionEnd: await page.evaluate(() => window.__unijack.kit.state.insertion) };
-    check('desktop', 'Play while exploded animates the explosion closed (not a snap)', mid > 0.02 && mid < 0.98 && res.playWhileExploded.explodeEnd === 0 && res.playWhileExploded.insertionEnd === 1, res.playWhileExploded);
+    await freshFrame(page); await shot('3-insertion-40'); res.insValuetext = await page.getAttribute('#ins', 'aria-valuetext');
+    // exploded, then "Play insertion": the explosion closes up (animated), then Mercury slides in. A software renderer may not draw a single frame
+    // during the 1.2 s close-up, so the animation is checked by what was scheduled right after the click (an explode tween to 0 with a duration,
+    // the kit still exploded, i.e. no snap) and by the settled end state, not by sampling a mid-animation frame at a fixed time.
+    await page.evaluate(() => window.__unijack.explodeTo(1)); await settled(page);
+    await page.click('#btn-play');
+    const sched = await page.evaluate(() => ({ anim: window.__unijack.anim(), explode: +window.__unijack.kit.state.explode.toFixed(3) }));
+    await settled(page, 300);
+    res.playWhileExploded = { scheduled: sched, explodeEnd: await page.evaluate(() => window.__unijack.kit.state.explode), insertionEnd: await page.evaluate(() => window.__unijack.kit.state.insertion) };
+    const tw = sched.anim.explode;
+    check('desktop', 'Play while exploded animates the explosion closed (not a snap)', !!tw && tw.to === 0 && tw.ms >= 500 && sched.explode > 0.02 && sched.anim.play && res.playWhileExploded.explodeEnd === 0 && res.playWhileExploded.insertionEnd === 1, res.playWhileExploded);
     await page.click('#btn-parts'); await page.waitForTimeout(600);
     res.partsListed = await page.$$eval('#part-list button', (b) => b.length);
     await openPanel(page); await page.fill('#part-filter', 'zzzz'); await page.waitForTimeout(200);
@@ -207,31 +234,31 @@ if (args.flow !== '0' && args.flow !== 0) {
     res.clicks = { afterRight, afterMiddle, afterLeft }; check('desktop', 'right and middle click do not select, left click does', !afterRight && !afterMiddle && afterLeft, res.clicks);
     await page.keyboard.press('Escape'); await page.waitForTimeout(200);
     // labels: shown in the hero view, none over the plain undersides, occluded tags hidden
-    await page.click('#btn-labels'); await page.waitForTimeout(700); await shot('5-labels');
+    await page.click('#btn-labels'); await freshFrame(page); await page.waitForTimeout(200); await shot('5-labels');
     const tags = async () => page.evaluate(() => document.querySelectorAll('.tag:not(.board):not([hidden])').length);
     res.labels = { hero: await tags() }; check('desktop', 'labels show in the hero view', res.labels.hero > 0, res.labels);
-    await page.click('[data-view="under"]'); await page.waitForTimeout(1800); await shot('6-underside'); res.labels.under = await tags();
+    await page.click('[data-view="under"]'); await settled(page, 300); await shot('6-underside'); res.labels.under = await tags();
     check('desktop', 'no designator tags over the underside', res.labels.under === 0, res.labels);
-    await page.click('[data-view="top"]'); await page.waitForTimeout(1600); res.labels.top = await tags(); await shot('6b-top-labels');
+    await page.click('[data-view="top"]'); await settled(page, 300); res.labels.top = await tags(); await shot('6b-top-labels');
     await page.click('#btn-labels');
     // hide boards, explode: the guides must not run to empty space, and a list row of a hidden board brings the board back
-    await page.click('[data-view="hero"]'); await page.waitForTimeout(1300);
+    await page.click('[data-view="hero"]'); await settled(page);
     await page.click('[data-show="mercury"]'); await page.click('[data-show="peri"]');
-    await page.evaluate(() => window.__unijack.explodeTo(1)); await page.waitForTimeout(1800);
+    await page.evaluate(() => window.__unijack.explodeTo(1)); await settled(page);
     res.guides = await page.evaluate(() => { const g = window.__unijack.kit.root.getObjectByName('explode-guides'); const a = g.geometry.attributes.position; let live = 0; for (let i = 0; i < a.count; i += 2) { const dx = a.getX(i) - a.getX(i + 1), dy = a.getY(i) - a.getY(i + 1), dz = a.getZ(i) - a.getZ(i + 1); if (Math.hypot(dx, dy, dz) > 0.01) live++; } return { visible: g.visible, liveSegments: live }; });
     check('desktop', 'no guide lines to hidden boards', res.guides.liveSegments === 0, res.guides); await shot('7-hidden-boards-exploded');
     await openPanel(page); await page.fill('#part-filter', 'Pin header J1'); await page.waitForTimeout(150);
-    await page.locator('#part-list button:not([hidden])').first().click(); await page.waitForTimeout(2200);
+    await page.locator('#part-list button:not([hidden])').first().click(); await settled(page, 300);
     res.hiddenBoardRow = { periChipPressed: await page.getAttribute('[data-show="peri"]', 'aria-pressed'), card: await page.evaluate(() => !document.getElementById('card').hidden) };
     check('desktop', 'choosing a part of a hidden board shows the board again', res.hiddenBoardRow.periChipPressed === 'true' && res.hiddenBoardRow.card, res.hiddenBoardRow); await shot('8-hidden-board-reshown');
-    await page.click('[data-show="mercury"]'); await page.evaluate(() => window.__unijack.explodeTo(0)); await page.waitForTimeout(1800);
+    await page.click('[data-show="mercury"]'); await page.evaluate(() => window.__unijack.explodeTo(0)); await settled(page);
   });
   await session('mobile', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }, async (page, shot) => {
-    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await page.waitForTimeout(1200); await shot('1-hero');
-    await page.tap('#btn-explode'); await page.waitForTimeout(3200); await shot('2-exploded');
-    await page.tap('#btn-explode'); await page.waitForTimeout(3200);
+    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await settled(page); await freshFrame(page); await shot('1-hero');
+    await page.tap('#btn-explode'); await settled(page, 300); await shot('2-exploded');
+    await page.tap('#btn-explode'); await settled(page);
     await page.tap('#btn-parts'); await page.waitForTimeout(500); await shot('3-parts-sheet');
-    await page.locator('#part-list button', { hasText: 'Tactile' }).first().tap(); await page.waitForTimeout(1800); await shot('4-card-above-peek');
+    await page.locator('#part-list button', { hasText: 'Tactile' }).first().tap(); await settled(page, 300); await shot('4-card-above-peek');
   });
 }
 
@@ -262,7 +289,7 @@ if (args.extra !== '0' && args.extra !== 0) {
       for (const s of stops) check(label, `focus ring not clipped on ${s.tag}:${s.name}`, !s.clippedBy, s.clippedBy);
       // Escape flow: Parts button -> Enter moves focus into the panel; Escape closes it and returns focus; card first, then panel
       await page.focus('#btn-parts'); await page.keyboard.press('Enter'); await page.waitForTimeout(300);
-      const f1 = await page.evaluate(() => document.activeElement?.id); await page.locator('#part-list button').nth(2).focus(); await page.keyboard.press('Enter'); await page.waitForTimeout(900);
+      const f1 = await page.evaluate(() => document.activeElement?.id); await page.locator('#part-list button').nth(2).focus(); await page.keyboard.press('Enter'); await settled(page);
       const card1 = await page.evaluate(() => !document.getElementById('card').hidden), panelAfterPick = await page.evaluate(() => !document.getElementById('parts-panel').hidden);   // short stages close the panel on a selection, so then only the card is left to close
       await page.keyboard.press('Escape'); await page.waitForTimeout(150); const afterEsc1 = await page.evaluate(() => ({ card: !document.getElementById('card').hidden, panel: !document.getElementById('parts-panel').hidden }));
       await page.keyboard.press('Escape'); await page.waitForTimeout(150); const afterEsc2 = await page.evaluate(() => ({ card: !document.getElementById('card').hidden, panel: !document.getElementById('parts-panel').hidden, focus: document.activeElement?.id }));
@@ -288,20 +315,47 @@ if (args.extra !== '0' && args.extra !== 0) {
 
   // ---------- 5. context loss ----------
   await session('context-loss', { viewport: { width: 900, height: 600 } }, async (page, shot, res) => {
-    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await page.waitForTimeout(800);
+    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await settled(page); await freshFrame(page);
     await page.locator('#c').screenshot({ path: path.join(OUT, 'context-loss-0-before.png') });
     await page.evaluate(() => { const gl = document.getElementById('c').getContext('webgl2') || document.getElementById('c').getContext('webgl'); window.__lose = gl.getExtension('WEBGL_lose_context'); window.__lose.loseContext(); }); await page.waitForTimeout(400);
     res.lost = await page.isVisible('#gl-notice'); check('context-loss', 'a notice appears when the context is lost', res.lost); await shot('1-lost');
     await page.evaluate(() => window.__lose.restoreContext()); await page.waitForTimeout(1500);
     res.restored = { notice: await page.isVisible('#gl-notice') }; check('context-loss', 'the notice clears when the context is restored', !res.restored.notice);
-    // a canvas read needs a fresh frame; ask for one through the UI
-    await page.evaluate(() => { window.__unijack.controls.dispatchEvent({ type: 'change' }); }); await page.waitForTimeout(600);
+    // a canvas read needs a fresh frame; ask for one and wait until it has been rendered
+    await freshFrame(page); await page.waitForTimeout(200);
     await page.locator('#c').screenshot({ path: path.join(OUT, 'context-loss-2-restored.png') });
     res.note = 'compare context-loss-0-before.png with context-loss-2-restored.png (lighting must match)';
   });
 }
 
-// ---------- 6. no WebGL: the fallback and dead controls ----------
+// ---------- 6. Backdrop chip: dark studio <-> white sweep without console errors; the solder-mask colour stays within 10 percent ----------
+if (args.env !== '0' && args.env !== 0) {
+  await session('env-sweep', { viewport: { width: 1440, height: 900 } }, async (page, shot, res) => {
+    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await settled(page);
+    res.studio = await page.evaluate(samplePixels); res.chipStudio = await page.getAttribute('#btn-env', 'aria-pressed');
+    await page.click('#btn-env'); await settled(page);
+    res.sweep = await page.evaluate(samplePixels); res.chipSweep = await page.getAttribute('#btn-env', 'aria-pressed'); res.kindSweep = await page.evaluate(() => window.__unijack.stage.envKind);
+    await shot('1-sweep');
+    await page.click('#btn-env'); await settled(page); await freshFrame(page);
+    res.back = { chip: await page.getAttribute('#btn-env', 'aria-pressed'), kind: await page.evaluate(() => window.__unijack.stage.envKind), ground: await page.evaluate(() => window.__unijack.stage.ground.name) };
+    check('env-sweep', 'Backdrop chip starts unpressed on the dark studio', res.chipStudio === 'false', res.chipStudio);
+    check('env-sweep', 'Backdrop chip toggles to the sweep (aria-pressed, stage.envKind)', res.chipSweep === 'true' && res.kindSweep === 'sweep', [res.chipSweep, res.kindSweep]);
+    check('env-sweep', 'Backdrop chip toggles back to the studio', res.back.chip === 'false' && res.back.kind === 'studio', res.back);
+    const lum = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+    check('env-sweep', 'studio backdrop is dark and the sweep backdrop is light', lum(res.studio.corner) < 90 && lum(res.sweep.corner) > 200, [res.studio.corner, res.sweep.corner]);
+    check('env-sweep', 'solder mask found in both frames', res.studio.teal > 5000 && res.sweep.teal > 5000, [res.studio.teal, res.sweep.teal]);
+    const ratio = res.sweep.lum / res.studio.lum; res.maskLumRatio = +ratio.toFixed(3);
+    check('env-sweep', 'solder-mask colour within 10 percent between studio and sweep (luminance of the mean teal)', ratio > 0.9 && ratio < 1.1, { studio: res.studio.mean, sweep: res.sweep.mean, ratio: res.maskLumRatio });
+  });
+  await session('env-sweep-url', { viewport: { width: 1440, height: 900 } }, async (page, shot, res) => {
+    await page.evaluate(() => { window.__unijack.controls.autoRotate = false; }); await settled(page); await freshFrame(page);
+    res.start = { chip: await page.getAttribute('#btn-env', 'aria-pressed'), kind: await page.evaluate(() => window.__unijack.stage.envKind) };
+    check('env-sweep-url', '?env=sweep starts on the sweep with the chip pressed', res.start.chip === 'true' && res.start.kind === 'sweep', res.start);
+    await shot('1-hero');
+  }, { query: '?env=sweep' });
+}
+
+// ---------- 7. no WebGL: the fallback and dead controls ----------
 if (args.extra !== '0' && args.extra !== 0) {
   const nb = await chromium.launch({ executablePath: exe, args: ['--disable-webgl', '--disable-3d-apis', '--disable-gpu', '--no-sandbox'] });
   for (const [w, h] of [[1440, 900], [390, 844]]) {

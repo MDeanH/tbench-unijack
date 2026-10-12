@@ -12,7 +12,10 @@ const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls)
 const DEG = Math.PI / 180;
 // ?quality=low turns the post-processing chain off (plain renderer.render: no ambient occlusion, depth of field or SMAA); ?quality=high keeps AO and DOF on
 // regardless of the measured frame time. Otherwise AO and DOF are dropped once about 20 frames in a row exceed about 30 ms (adaptive quality).
-const QUALITY = new URLSearchParams(location.search).get('quality') || 'auto';
+const PARAMS = new URLSearchParams(location.search);
+const QUALITY = PARAMS.get('quality') || 'auto';
+// ?env=sweep starts on the white sweep (bright backdrop and table, like the gallery photographs); the dark studio is the default. Both are rendering choices.
+const ENV0 = PARAMS.get('env') === 'sweep' ? 'sweep' : 'studio';
 
 // the full disclosure is open only on roomy screens; on phones and windows under 860 px high it starts collapsed (the short line and the summary stay visible) so the model keeps the space
 $('#about').open = !matchMedia('(max-width: 640px), (max-height: 860px)').matches;
@@ -30,13 +33,13 @@ if (renderer) await start(renderer).catch((e) => { fail('script', e); });
 
 async function start(renderer) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  const stage = makeStage(renderer, { shadows: true });
+  const stage = makeStage(renderer, { shadows: true, env: ENV0 });
   const scene = stage.scene;
   const camera = new THREE.PerspectiveCamera(32, 1, 1, 4000);
   const post = QUALITY === 'low' ? null : makePost(renderer, scene, camera, { ao: true, dof: false, aa: true });
   const controls = new OrbitControls(camera, canvas);
   Object.assign(controls, { enableDamping: !reduce.matches, dampingFactor: 0.08, screenSpacePanning: true, minDistance: 30, maxDistance: 900, autoRotateSpeed: 0.7 });
-  let needs = true, kit = null, currentView = 'hero', tween = null;
+  let needs = true, kit = null, currentView = 'hero', tween = null, frames = 0, camSettling = false;
   let expAnim = null, play = null, sel = null, helper = null, occAt = 0;   // animation and selection state (declared up front: resize() and applyView() read it)
   controls.addEventListener('change', () => { needs = true; });
   controls.addEventListener('start', () => { setRotate(false); clearViewChips(); });
@@ -165,6 +168,15 @@ async function start(renderer) {
   }
   applyReduce(); setRotate(!reduce.matches);
   reduce.addEventListener?.('change', applyReduce);
+
+  // ---------- backdrop: dark studio (default) or a white sweep like the photographs ----------
+  const envBtn = $('#btn-env');
+  function setEnv(name) {
+    name = name === 'sweep' ? 'sweep' : 'studio'; if (name !== stage.envKind) stage.setEnv(name);
+    envBtn.setAttribute('aria-pressed', String(name === 'sweep')); needs = true;
+  }
+  envBtn.addEventListener('click', () => setEnv(stage.envKind === 'sweep' ? 'studio' : 'sweep'));
+  setEnv(ENV0);
 
   // ---------- keyboard on the canvas (Escape is handled at document level, below) ----------
   canvas.addEventListener('keydown', (e) => {
@@ -544,13 +556,14 @@ async function start(renderer) {
   const perf = { slow: 0, dropped: false, lastRendered: 0, samples: 0 };
   let pointerActive = false;
   canvas.addEventListener('pointerdown', () => { pointerActive = true; }); window.addEventListener('pointerup', () => { pointerActive = false; needs = true; }); window.addEventListener('pointercancel', () => { pointerActive = false; needs = true; });
-  function updateQuality(now, animating) {
+  function updateQuality(now, animating, camMoved) {
     if (!post) return;
     // frame time is measured only across consecutive rendered frames (the loop renders on demand), i.e. while something animates
     if (animating && perf.lastRendered) { const dt = now - perf.lastRendered; perf.samples++; if (dt > 30) perf.slow++; else perf.slow = Math.max(0, perf.slow - 1); }
     perf.lastRendered = now;
     if (!perf.dropped && QUALITY !== 'high' && perf.slow >= 20) { perf.dropped = true; post.set({ ao: false, dof: false }); console.info('unijack: slow frames, ambient occlusion and depth of field switched off'); }
-    const dof = !perf.dropped && currentView === 'hero' && !tween && !pointerActive && !play && !expAnim;
+    // depth of field only in the Hero preset and only while NOTHING moves: no tween, insertion or explode animation, no pointer down, no auto-rotate, no damping
+    const dof = !perf.dropped && currentView === 'hero' && !tween && !pointerActive && !play && !expAnim && !controls.autoRotate && !camMoved;
     if (post.state.dof !== dof) post.set({ dof });
     if (dof) post.focusAt(center);
   }
@@ -561,13 +574,21 @@ async function start(renderer) {
     requestAnimationFrame(loop);
     const moving = stepTween(now) | stepPlay(now) | stepExplode(now);
     const camMoved = controls.update();
+    camSettling = !!camMoved && !controls.autoRotate;   // damping still moving the camera counts as busy (not the endless auto-rotate); updated every tick, not only on rendered frames
     if (!(camMoved || moving || needs)) return;
     if (helper && sel) { selBox.setFromObject(sel); helper.visible = visibleDeep(sel); }
-    fitShadowToKit(); updateQuality(now, !!(camMoved || moving));
+    fitShadowToKit(); updateQuality(now, !!(camMoved || moving), !!camMoved);
     if (post) post.render(); else renderer.render(scene, camera);
-    updateLabels(now); needs = false;
+    updateLabels(now); needs = false; frames++;
     if (firstFrame) { firstFrame = false; const l = $('#loader'); l.classList.add('done'); setTimeout(() => { l.hidden = true; }, 500); window.__viewerReady = true; }
   }
   requestAnimationFrame(loop);
-  window.__unijack = { kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE, frameFor, boardPoints, dirFromAzEl, VIEWS, stage, post, perf, quality: QUALITY, busy: () => !!(tween || expAnim || play) };
+  window.__unijack = {
+    kit, camera, controls, select, flyToView, explodeTo, focusOn, visInfo, THREE, frameFor, boardPoints, dirFromAzEl, VIEWS, stage, post, perf, quality: QUALITY, setEnv,
+    // test hooks: busy() is true while a camera tween, the explode tween, the insertion play or camera damping is running; anim() says which;
+    // frames counts rendered frames (the loop renders on demand) so a test can wait for a fresh frame instead of a fixed time
+    busy: () => !!(tween || expAnim || play || camSettling),
+    anim: () => ({ tween: !!tween, explode: expAnim ? { from: expAnim.from, to: expAnim.to, ms: expAnim.ms } : null, play: !!play, settling: camSettling }),
+    get frames() { return frames; },
+  };
 }

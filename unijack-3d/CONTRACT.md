@@ -82,8 +82,10 @@ Put `meta` on the GROUP, not on its sub-meshes. The viewer picks the nearest anc
 
 ## Budgets
 
-Measured, not guessed. The whole assembled kit currently costs about 125k triangles, 289 meshes and **751 draw calls per frame including the shadow pass**
-(`node tools/qa-render.mjs --only=all` prints `calls=`). Keep the kit at or under about 800 draw calls and 150k triangles. Real cost is draw calls, not mesh count:
+Measured, not guessed. The whole assembled kit currently costs about 138k triangles, 285 meshes and **753 draw calls per frame including the shadow pass**,
+measured **with the post-processing chain off**: `node tools/qa-render.mjs --only=all --post=0` prints `calls=` (oblique photo renders run the chain by default,
+and its GTAO pass draws the scene a second time for normals and depth, about 437 more calls, plus a few full-screen quads: that cost belongs to the viewer's post
+chain, not to the kit, so it is outside the kit budget; the plain-render number is the one to compare). Keep the kit at or under about 800 draw calls and 150k triangles. Real cost is draw calls, not mesh count:
 a multi-material mesh costs one draw call per material group, so `prim.boxPart` / `cylPart` / `boardSlab` merge face groups to one group per distinct material,
 small parts (under 3 mm) do not cast shadows, and instanced leads/pins/pads are one call each. Use instancing or merged geometry for repeated parts; avoid per-part
 materials (share `ctx.mat.*`). No per-part textures beyond the shared board photos. No external downloads.
@@ -101,13 +103,14 @@ Use YOUR key for the output dir so parallel builders do not overwrite each other
 
 ```
 node tools/qa-render.mjs --only=base --view=top --mode=footprint --hide=base-right --dir=qa-out/KEY --out=qa-out/KEY/fp.png
-PY=/tmp/claude-0/-home-user-tbench-unijack/97ae59a7-ac1e-5857-b6c6-1c886e24d733/scratchpad/venv-img/bin/python
+PY=python3   # a Python with pillow, numpy and scipy (see README)
 $PY tools/overlay.py --tex base-top --render qa-out/KEY/fp.png --out qa-out/KEY/overlay.png [--crop x0,y0,x1,y1 --zoom 2]
 $PY tools/crop.py --tex base-top --box 0,0,600,350 --zoom 3 --grid 50 --out qa-out/KEY/crop.png
 node tools/qa-render.mjs --only=base --view=oblique --az=35 --el=35 --out=qa-out/KEY/obl.png
 ```
 `--only` = all|base|peri|mercury; `--view` = top|bottom|oblique|custom; `--mode` = photo|footprint|clay;
-`--hide=name1,name2` hides objects by name (e.g. `base-left`, `base-right`); `--ins`/`--exp` set insertion/explode state.
+`--hide=name1,name2` hides objects by name (e.g. `base-left`, `base-right`); `--ins`/`--exp` set insertion/explode state;
+`--post=0|1` plain render or the viewer's post chain (GTAO, SMAA, OutputPass; default on for oblique/custom photo renders), `--dof=1`, `--env=studio|sweep|room`.
 The overlay draws the outline of every part footprint in magenta on the photo: outlines must hug the real parts.
 Read the PNGs with your image viewer (Read tool) and iterate. Also check oblique and low-angle renders for floating parts,
 z-fighting, parts clipping into the board or each other, and implausible proportions. Console errors are printed by the tool.

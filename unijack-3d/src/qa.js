@@ -3,7 +3,8 @@
 //   az, el (degrees, oblique)    ins, exp (0..1 model state)       w, h (px; top/bottom default to the texture size)
 //   cam=x,y,z,tx,ty,tz (custom)  fov
 //   post=0|1 (EffectComposer: GTAO + SMAA + OutputPass; default ON for oblique/custom photo renders, OFF for top/bottom/footprint/clay)
-//   dof=1 (depth of field, needs post)   env=studio|room   shadow=pcf|vsm   ao=0 (post without AO)
+//   dof=1 (depth of field, needs post)   env=studio|sweep|room   shadow=pcf|vsm   ao=0 (post without AO)   fit=0 (no shadow-camera fit)
+//   gain=, penv= (PHOTO_GAIN / PHOTO_ENV calibration sweeps)   look=key:8,fill:4.6,sheen:7,envIntensity:1.25,keyLight:2.4 (stage preset overrides)   exposure=
 import * as THREE from 'three';
 import { createUniJack } from './model.js';
 import { makeStage } from './lib/stage.js';
@@ -16,7 +17,20 @@ const num = (k, d) => (q.has(k) ? parseFloat(q.get(k)) : d);
 const KIND_COLOR = { connector: 0xff3b30, ic: 0x34c759, passive: 0xffcc00, cap: 0xff9500, pin: 0xaf52de, latch: 0x5ac8fa, led: 0xff2d92, module: 0x0a84ff, other: 0xffffff };
 
 globalThis.__PHOTO_GAIN = q.has('gain') ? parseFloat(q.get('gain')) : undefined;   // calibration sweeps
-globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
+globalThis.__PHOTO_ENV = q.has('penv') ? parseFloat(q.get('penv')) : undefined;    // (was `env`, which collided with the stage's env kind and fed NaN into the shader for --env=room)
+// stage preset overrides: map radiances (key, fill, rim, sheen, top, bottom, ceiling) and light intensities (envIntensity, keyLight, rimLight, hemi)
+function parseLook(s) {
+  if (!s) return null;
+  const look = { map: {} }, lights = { envIntensity: 'envIntensity', keyLight: 'key', rimLight: 'rim', hemi: 'hemi' }, satin = {};
+  for (const kv of s.split(',')) {
+    const [k, v] = kv.split(':'); if (!k || v === undefined) continue;
+    if (lights[k]) look[lights[k]] = parseFloat(v);
+    else if (k === 'satinColor') satin.color = '#' + v; else if (k === 'satinEnv') satin.envMapIntensity = parseFloat(v); else if (k === 'satinSpec') satin.specularIntensity = parseFloat(v);
+    else look.map[k] = parseFloat(v);
+  }
+  if (Object.keys(satin).length) look.satin = { color: '#22262b', envMapIntensity: 0.6, specularIntensity: 0.3, ...satin };
+  return look;
+}
 (async () => {
   try {
     const rectify = q.has('rectify') ? q.get('rectify') === '1' : !(mode === 'footprint' || view === 'top' || view === 'bottom');   // overlays compare against UNrectified textures
@@ -33,7 +47,7 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
 
     const footprint = mode === 'footprint';
-    const stage = makeStage(renderer, { shadows: !footprint, env: q.get('env') || 'studio', shadowType: q.get('shadow') || 'pcf' });
+    const stage = makeStage(renderer, { shadows: !footprint, env: q.get('env') || 'studio', shadowType: q.get('shadow') || 'pcf', look: parseLook(q.get('look')), exposure: num('exposure', 1.0) });
     const wantPost = q.has('post') ? q.get('post') === '1' : (mode === 'photo' && (view === 'oblique' || view === 'custom'));
     kit.setVisible({ base: only === 'all' || only === 'base', peri: only === 'all' || only === 'peri', mercury: only === 'all' || only === 'mercury' });
     kit.setInsertion(num('ins', 1)); kit.setExplode(num('exp', 0));
@@ -43,21 +57,21 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
 
     if (footprint) {
       renderer.toneMapping = THREE.NoToneMapping; stage.scene.background = new THREE.Color(0x000000);
-      stage.scene.environment = null; stage.ground.visible = false; if (stage.backdrop) stage.backdrop.visible = false; stage.scene.fog = null;
+      stage.scene.environment = null; stage.ground.visible = false; stage.backdrop.visible = false; stage.scene.fog = null;
       stage.scene.traverse((o) => {
-        if (!(o.isMesh || o.isInstancedMesh)) return;
+        if (!(o.isMesh || o.isInstancedMesh) || o.userData.stage) return;
         let k = null, n = o; while (n && !k) { k = n.userData?.kind; n = n.parent; }
         const col = k === 'board' ? 0x000000 : (KIND_COLOR[k] ?? KIND_COLOR.other);
         o.material = new THREE.MeshBasicMaterial({ color: col });
       });
     } else if (mode === 'clay') {
-      stage.scene.traverse((o) => { if ((o.isMesh || o.isInstancedMesh) && o.name !== 'ground' && o.name !== 'backdrop') o.material = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, roughness: 0.7 }); });
+      stage.scene.traverse((o) => { if ((o.isMesh || o.isInstancedMesh) && !o.userData.stage) o.material = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, roughness: 0.7 }); });
     }
 
     // camera
     kit.root.updateMatrixWorld(true);
     const box = new THREE.Box3();
-    kit.root.traverseVisible((o) => { if ((o.isMesh || o.isInstancedMesh) && o.name !== 'ground') box.expandByObject(o); });
+    kit.root.traverseVisible((o) => { if ((o.isMesh || o.isInstancedMesh) && !o.userData.stage) box.expandByObject(o); });
     const ctr = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
     let cam;
     if (view === 'top' || view === 'bottom') {
@@ -86,7 +100,12 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
     if (post) post.focusAt(ctr); window.__post = post;
     renderer.info.autoReset = false;   // count the whole frame (shadow pass + every post pass), not just the last renderer.render()
     const draw = () => { renderer.info.reset(); if (post) post.render(); else renderer.render(stage.scene, cam); };
-    draw(); const t0 = performance.now(); draw(); const frameMs = performance.now() - t0;
+    // frame time INCLUDING GPU completion: readPixels of one pixel after gl.finish() blocks until the frame is done (plain performance.now() around
+    // the draw only measures command submission, which once read 75 ms plain vs 31 ms with the post chain, the inverse of the real cost)
+    const gl = renderer.getContext(), px = new Uint8Array(4);
+    const sync = () => { gl.finish(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
+    draw(); sync();
+    const t0 = performance.now(); draw(); sync(); const frameMs = performance.now() - t0;
 
     let meshes = 0, tris = 0;
     kit.root.traverseVisible((o) => {
@@ -94,7 +113,7 @@ globalThis.__PHOTO_ENV = q.has('env') ? parseFloat(q.get('env')) : undefined;
       const g = o.geometry, n = (g.index ? g.index.count : g.attributes.position.count) / 3;
       tris += n * (o.isInstancedMesh ? o.count : 1);
     });
-    window.__stats = { meshes, triangles: Math.round(tris), canvas: [W, H], drawCalls: renderer.info.render.calls, post: post ? post.state : null, passes: post ? post.passCount : 0, frameMs: Math.round(frameMs) };
+    window.__stats = { meshes, triangles: Math.round(tris), canvas: [W, H], drawCalls: renderer.info.render.calls, post: post ? post.state : null, passes: post ? post.passCount : 0, frameMs: Math.round(frameMs), env: stage.envKind };
     window.__stage = stage; window.__kit = kit; window.__cam = cam; window.__renderer = renderer;
     window.__ready = true;
   } catch (e) { console.error(e); window.__error = String(e && e.stack || e); }
